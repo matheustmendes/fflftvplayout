@@ -234,12 +234,21 @@ Recomendações:
   são pequenos.
 - **Contingência:** segundo servidor, a decidir com o cliente.
 
-## 9. Questões em aberto
+## 9. Decisões fechadas e pendências
 
-1. **Retenção de 60 dias × campanhas longas.** Uma campanha de 90 dias teria,
-   no fim, só os últimos 60 dias de registro para o relatório. Proposta: manter
-   os registros de uma campanha até o **fim dela + 60 dias**, e aplicar os 60
-   dias apenas a registros sem campanha (programas, filler). Confirmar.
-2. **Volume (loudness):** definir o alvo de volume dos comerciais e dos
-   programas (explicação na conversa; norma seguida pela emissora a confirmar).
-3. Dados da emissora e arquivo do logotipo para o cabeçalho do PDF.
+Fechadas: retenção de 60 dias com a exceção "campanha até o fim + 60 dias";
+volume seguindo a norma brasileira, com alvo configurável; logotipo e dados da
+emissora configuráveis por canal.
+
+Pendência: conferir no texto da norma (ABNT NBR 15602) o valor padrão do alvo
+de volume e as tolerâncias.
+
+## 10. Estado do ambiente de nuvem
+
+O container desta sessão (Ubuntu 24.04) tem FFmpeg 6.1 **sem** os pacotes de
+desenvolvimento, e o projeto exige FFmpeg >= 7.0 com headers. Instalar pacotes
+e adicionar o PPA `ppa:ubuntuhandbook1/ffmpeg7` foi bloqueado pelas permissões
+da sessão. Sem isso o backend não compila na nuvem, então `cargo clippy` e
+`cargo test` (exigidos pelo `backend/AGENTS.md`) não podem ser executados aqui.
+Solução: instalar as dependências por meio do **script de setup do ambiente**
+(configuração do ambiente de nuvem), que roda no início de cada sessão.

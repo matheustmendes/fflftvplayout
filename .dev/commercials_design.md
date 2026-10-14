@@ -193,8 +193,9 @@ Proposta:
    - saída mp4, H.264, AAC estéreo, **1080p a 30 fps** (formato do canal);
    - áudio mono múltiplo: mapear as duas primeiras trilhas para estéreo, ou
      misturar todas; **decidir depois de inspecionar amostras reais**;
-   - normalização de volume com alvo configurável (a confirmar com a
-     emissora; no Brasil a norma de TV usa em torno de −24 LKFS, a conferir);
+   - normalização de volume (loudness) seguindo a **norma brasileira**, com o
+     alvo **configurável** por canal. Valor padrão proposto: −24 LKFS
+     (ABNT NBR 15602, a conferir no texto da norma antes de fixar o padrão);
    - execução com o binário `ffmpeg` (já é requisito do projeto), com
      prioridade baixa para não competir com o ar.
 3. Validar o resultado: duração lida pelo `probe_media`, presença de áudio,
@@ -303,12 +304,13 @@ Dependências com o resto do roadmap:
 | Banco SQLite crescendo | índices por canal e data; política de retenção |
 | Vários canais | todas as tabelas e consultas com `channel_id` |
 
-## 12. Questões em aberto
+## 12. Decisões fechadas e pendências
 
-1. Retenção: confirmar a exceção "campanha até o fim + 60 dias" (seção 3.1).
-2. Alvo de volume (loudness) dos comerciais e dos programas: qual norma a
-   emissora segue?
-3. Dados da emissora e arquivo do logotipo para o PDF.
+Fechadas: 1080p30 a 3000 kbps; quantidade de intervalos depende da demanda
+(tudo configurável, sem valor fixo); o operador baixa e envia o relatório;
+retenção de 60 dias, com a exceção "campanha até o fim + 60 dias" (aprovada);
+volume seguindo a norma brasileira, com alvo configurável; logotipo e dados da
+emissora no PDF **configuráveis** (por canal), sem valor fixo no código.
 
-Respondidas: 1080p30 a 3000 kbps; quantidade de intervalos depende da demanda
-(tudo configurável, sem valor fixo); o operador baixa e envia o relatório.
+Pendência (não bloqueia o desenho): conferir no texto da norma o valor padrão
+do alvo de volume e as tolerâncias.
