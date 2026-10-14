@@ -1,16 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { cloneDeep } from 'es-toolkit/object'
+import { isEqual } from 'es-toolkit/predicate'
+
+import Multiselect from '@vueform/multiselect'
+
+import ConfirmModal from '@/components/ui/ConfirmModal.vue'
+import SaveBar from '@/components/ui/SaveBar.vue'
+import SettingsCard from '@/components/config/SettingsCard.vue'
+import SettingsField from '@/components/config/SettingsField.vue'
 
 import { authFetch } from '@/composables/authFetch'
 import { useVariables } from '@/composables/variables'
 import { useAuth } from '@/stores/auth'
 import { useIndex } from '@/stores/index'
 import { useConfig } from '@/stores/config'
-
-import Multiselect from '@vueform/multiselect'
-
-import GenericModal from '@/components/utils/GenericModal.vue'
 
 const { t } = useI18n()
 const { multiSelectClasses } = useVariables()
@@ -21,8 +26,11 @@ const indexStore = useIndex()
 const selected = ref(null as null | number)
 const users = ref([] as User[])
 const showUserModal = ref(false)
+const showDeleteModal = ref(false)
+const saving = ref(false)
 const newPass = ref('')
 const confirmPass = ref('')
+const savedUser = ref({} as User)
 
 const user = ref({
     id: 0,
@@ -36,8 +44,31 @@ const user = ref({
     two_factor: true,
 } as User)
 
+const isGlobalAdmin = computed(() => authStore.role === 'global_admin')
+const isEditingSelf = computed(() => configStore.configUser.id === configStore.currentUser)
+const dirty = computed(
+    () => !isEqual(configStore.configUser, savedUser.value) || newPass.value.length > 0 || confirmPass.value.length > 0,
+)
+const roleLabel = computed(() => {
+    const roleId = configStore.configUser.role_id
+
+    if (roleId === 1) return t('settings2.account.roleGlobal')
+    if (roleId === 2) return t('settings2.account.roleAdmin')
+
+    return t('settings2.account.roleUser')
+})
+
+// Remember what the server has, so the page can tell what was changed and undo it.
+watch(
+    () => configStore.configUser,
+    (current) => {
+        savedUser.value = cloneDeep(current)
+    },
+    { immediate: true },
+)
+
 onMounted(() => {
-    if (authStore.role === 'global_admin') {
+    if (isGlobalAdmin.value) {
         getUsers()
     }
 })
@@ -55,6 +86,8 @@ async function getUsers() {
 function onChange(event: Event) {
     const target = event.target as HTMLSelectElement
     selected.value = Number(target.value)
+    newPass.value = ''
+    confirmPass.value = ''
 
     getUserConfig()
 }
@@ -68,24 +101,31 @@ async function getUserConfig() {
     })
 }
 
-async function deleteUser() {
-    if (configStore.configUser.id === configStore.currentUser) {
-        indexStore.msgAlert('error', t('user.deleteNotPossible'), 2)
-    } else {
-        await authFetch(`/api/user/${configStore.configUser.id}`, {
-            method: 'DELETE',
-            headers: authStore.authHeader,
-        })
-            .then(async () => {
-                indexStore.msgAlert('success', t('user.deleteSuccess'), 2)
-
-                await configStore.getUserConfig()
-                await getUsers()
-            })
-            .catch((e) => {
-                indexStore.msgAlert('error', `${t('user.deleteError')}: ${e}`, 2)
-            })
+function askDeleteUser() {
+    if (isEditingSelf.value) {
+        indexStore.msgAlert('error', t('settings2.account.deleteSelf'), 3)
+        return
     }
+
+    showDeleteModal.value = true
+}
+
+async function deleteUser() {
+    showDeleteModal.value = false
+
+    await authFetch(`/api/user/${configStore.configUser.id}`, {
+        method: 'DELETE',
+        headers: authStore.authHeader,
+    })
+        .then(async () => {
+            indexStore.msgAlert('success', t('settings2.account.deleted'), 2)
+
+            await configStore.getUserConfig()
+            await getUsers()
+        })
+        .catch(() => {
+            indexStore.msgAlert('error', t('settings2.account.deleteFailed'), 3)
+        })
 }
 
 function clearUser() {
@@ -100,177 +140,264 @@ function clearUser() {
     user.value.two_factor = true
 }
 
-async function addUser(add: boolean) {
-    if (add) {
-        if (user.value.admin) {
-            user.value.role_id = 2
-        } else {
-            user.value.role_id = 3
-        }
+function closeUserModal() {
+    showUserModal.value = false
+    clearUser()
+}
 
-        delete user.value.admin
+async function addUser() {
+    if (!user.value.username || !user.value.password || user.value.password !== user.value.confirm) {
+        indexStore.msgAlert('error', t('settings2.account.mismatch'), 3)
+        return
+    }
 
-        if (user.value.username && user.value.password && user.value.password === user.value.confirm) {
-            await authStore.inspectToken()
-            try {
-                const username = user.value.username
-                await configStore.addNewUser(user.value)
-                showUserModal.value = false
+    // The form keeps its own "admin" checkbox; the server only knows the role id.
+    const payload: User = { ...user.value, role_id: user.value.admin ? 2 : 3 }
+    delete payload.admin
 
-                indexStore.msgAlert('success', t('user.addSuccess'), 2)
-                await getUsers()
-                const createdUser = users.value.find((item) => item.username === username)
-                if (createdUser) {
-                    selected.value = createdUser.id
-                    await getUserConfig()
-                }
-            } catch {
-                indexStore.msgAlert('error', t('user.addFailed'), 3)
-            }
+    await authStore.inspectToken()
 
-            clearUser()
-        } else {
-            indexStore.msgAlert('error', t('user.mismatch'), 3)
-        }
-    } else {
+    try {
+        const username = user.value.username
+        await configStore.addNewUser(payload)
         showUserModal.value = false
+
+        indexStore.msgAlert('success', t('settings2.account.added'), 2)
+        await getUsers()
+        const createdUser = users.value.find((item) => item.username === username)
+        if (createdUser) {
+            selected.value = createdUser.id
+            await getUserConfig()
+        }
+
         clearUser()
+    } catch {
+        indexStore.msgAlert('error', t('settings2.account.addFailed'), 4)
     }
 }
 
+function discardChanges() {
+    configStore.configUser = cloneDeep(savedUser.value)
+    newPass.value = ''
+    confirmPass.value = ''
+}
+
 async function onSubmitUser() {
+    if (saving.value) {
+        return
+    }
+
     if (newPass.value) {
         if (newPass.value === confirmPass.value) {
             configStore.configUser.password = newPass.value
         } else {
-            indexStore.msgAlert('error', t('user.mismatch'), 3)
+            indexStore.msgAlert('error', t('settings2.account.mismatch'), 4)
             return
         }
     }
 
+    saving.value = true
     await authStore.inspectToken()
     try {
         await configStore.setUserConfig(configStore.configUser)
-        indexStore.msgAlert('success', t('user.updateSuccess'), 2)
+        savedUser.value = cloneDeep(configStore.configUser)
+        newPass.value = ''
+        confirmPass.value = ''
+        indexStore.msgAlert('success', t('settings2.account.saved'), 2)
     } catch {
-        indexStore.msgAlert('error', t('user.updateFailed'), 2)
+        indexStore.msgAlert('error', t('settings2.account.saveFailed'), 4)
+    } finally {
+        saving.value = false
     }
-
-    newPass.value = ''
-    confirmPass.value = ''
 }
 </script>
 <template>
-    <div class="w-full max-w-200 xs:pe-8">
-        <h2 class="pt-3 text-3xl">{{ t('user.title') }}</h2>
-        <div v-if="authStore.role === 'global_admin'" class="w-full join max-w-md mt-10">
-            <select v-model="selected" class="join-item select w-full" @change="onChange($event)">
-                <option v-for="item in users" :key="item.username" :value="item.id">{{ item.username }}</option>
-            </select>
-            <button class="join-item btn btn-primary" title="Add new User" @click="showUserModal = true">
-                <i class="bi-plus-lg" />
-            </button>
-            <button class="join-item btn btn-primary" title="Delete selected user" @click="deleteUser()">
-                <i class="bi-x-lg" />
-            </button>
-        </div>
-        <form v-if="configStore.configUser" class="mt-5" @submit.prevent="onSubmitUser">
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.name') }}</legend>
-                <input
-                    v-model="configStore.configUser.username"
-                    type="text"
-                    name="username"
-                    class="input w-full bg-base-100!"
-                    disabled
-                />
-            </fieldset>
+    <div class="space-y-5">
+        <SettingsCard
+            v-if="isGlobalAdmin"
+            icon="bi-people"
+            :title="t('settings2.account.picker')"
+            :text="t('settings2.account.pickerHelp')"
+        >
+            <div class="flex flex-wrap items-center gap-2">
+                <select
+                    v-model="selected"
+                    class="select grow min-w-48 max-w-md"
+                    :aria-label="t('settings2.account.picker')"
+                    @change="onChange($event)"
+                >
+                    <option v-for="item in users" :key="item.username" :value="item.id">{{ item.username }}</option>
+                </select>
+                <button type="button" class="btn btn-primary" @click="showUserModal = true">
+                    <i class="bi bi-person-plus" />
+                    {{ t('settings2.account.add') }}
+                </button>
+                <button type="button" class="btn btn-error btn-outline" @click="askDeleteUser">
+                    <i class="bi bi-person-x" />
+                    {{ t('settings2.account.delete') }}
+                </button>
+            </div>
+        </SettingsCard>
 
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.mail') }}</legend>
-                <input v-model="configStore.configUser.mail" type="email" name="mail" class="input w-full" />
-            </fieldset>
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.newPass') }}</legend>
-                <input v-model="newPass" type="password" name="password" class="input w-full" />
-            </fieldset>
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.confirmPass') }}</legend>
-                <input v-model="confirmPass" type="password" name="password" class="input w-full" />
-            </fieldset>
+        <form v-if="configStore.configUser" class="space-y-5" @submit.prevent="onSubmitUser">
+            <SettingsCard
+                icon="bi-person-circle"
+                :title="
+                    isGlobalAdmin && !isEditingSelf ? t('settings2.account.titleOther') : t('settings2.account.title')
+                "
+                :text="t('settings2.account.text')"
+            >
+                <template #actions>
+                    <span class="badge badge-outline">{{ roleLabel }}</span>
+                </template>
+                <SettingsField :label="t('settings2.account.username')" :hint="t('settings2.account.usernameHint')">
+                    <input
+                        v-model="configStore.configUser.username"
+                        type="text"
+                        name="username"
+                        class="input w-full bg-base-200!"
+                        disabled
+                    />
+                </SettingsField>
+                <SettingsField :label="t('settings2.account.mail')" :help="t('settings2.account.mailHelp')">
+                    <input v-model="configStore.configUser.mail" type="email" name="mail" class="input w-full" />
+                </SettingsField>
+            </SettingsCard>
 
-            <fieldset v-if="authStore.role === 'global_admin'" class="fieldset mt-2 rounded-box w-full">
-                <label class="fieldset-label text-base-content">
-                    <input v-model="configStore.configUser.two_factor" type="checkbox" class="checkbox" />
-                    {{ t('user.twoFactor') }}
+            <SettingsCard
+                icon="bi-key"
+                :title="t('settings2.account.passwordTitle')"
+                :text="t('settings2.account.passwordText')"
+            >
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <SettingsField :label="t('settings2.account.newPass')">
+                        <input
+                            v-model="newPass"
+                            type="password"
+                            name="password"
+                            autocomplete="new-password"
+                            class="input w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.account.confirmPass')">
+                        <input
+                            v-model="confirmPass"
+                            type="password"
+                            name="password_confirm"
+                            autocomplete="new-password"
+                            class="input w-full"
+                        />
+                    </SettingsField>
+                </div>
+            </SettingsCard>
+
+            <SettingsCard
+                v-if="isGlobalAdmin"
+                icon="bi-shield-check"
+                :title="t('settings2.account.accessTitle')"
+                :text="t('settings2.account.accessText')"
+            >
+                <label class="flex cursor-pointer items-center gap-3">
+                    <input v-model="configStore.configUser.two_factor" type="checkbox" class="toggle toggle-primary" />
+                    <span class="font-semibold">{{ t('settings2.account.twoFactor') }}</span>
                 </label>
-            </fieldset>
+                <p class="text-sm opacity-70">{{ t('settings2.account.twoFactorHelp') }}</p>
 
-            <div v-if="authStore.role === 'global_admin'" class="form-control w-full max-w-md mt-5">
-                <Multiselect
-                    v-model="configStore.configUser.channel_ids"
-                    :options="configStore.channels"
-                    mode="tags"
-                    :close-on-select="true"
-                    :can-clear="false"
-                    label="name"
-                    value-prop="id"
-                    :classes="multiSelectClasses"
-                    :disabled="configStore.configUser.role_id === 1"
-                />
+                <SettingsField :label="t('settings2.account.channels')" :help="t('settings2.account.channelsHelp')">
+                    <Multiselect
+                        v-model="configStore.configUser.channel_ids"
+                        :options="configStore.channels"
+                        mode="tags"
+                        :close-on-select="true"
+                        :can-clear="false"
+                        label="name"
+                        value-prop="id"
+                        :classes="multiSelectClasses"
+                        :disabled="configStore.configUser.role_id === 1"
+                    />
+                </SettingsField>
+            </SettingsCard>
+
+            <SaveBar :dirty="dirty" :saving="saving" require-change @discard="discardChanges" />
+        </form>
+    </div>
+
+    <div
+        v-if="showUserModal"
+        class="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-black/40 p-4 sm:items-center"
+        role="dialog"
+        aria-modal="true"
+        @click.self="closeUserModal"
+        @keydown.esc="closeUserModal"
+    >
+        <form class="w-full max-w-lg rounded-2xl bg-base-100 p-6 shadow-2xl" @submit.prevent="addUser">
+            <h2 class="text-xl font-bold">{{ t('settings2.account.addTitle') }}</h2>
+            <p class="mt-1 text-sm opacity-70">{{ t('settings2.account.addText') }}</p>
+
+            <div class="mt-4 space-y-4">
+                <SettingsField :label="t('settings2.account.username')">
+                    <input v-model="user.username" type="text" name="new_username" class="input w-full" />
+                </SettingsField>
+                <SettingsField :label="t('settings2.account.mail')">
+                    <input v-model="user.mail" type="email" name="new_mail" class="input w-full" />
+                </SettingsField>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <SettingsField :label="t('settings2.account.password')">
+                        <input
+                            v-model="user.password"
+                            type="password"
+                            name="new_password"
+                            autocomplete="new-password"
+                            class="input w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.account.confirmPass')">
+                        <input
+                            v-model="user.confirm"
+                            type="password"
+                            name="new_password_confirm"
+                            autocomplete="new-password"
+                            class="input w-full"
+                        />
+                    </SettingsField>
+                </div>
+                <SettingsField :label="t('settings2.account.channels')" :help="t('settings2.account.channelsHelp')">
+                    <Multiselect
+                        v-model="user.channel_ids"
+                        :options="configStore.channels"
+                        mode="tags"
+                        :close-on-select="true"
+                        :can-clear="false"
+                        label="name"
+                        value-prop="id"
+                        :classes="multiSelectClasses"
+                    />
+                </SettingsField>
+                <label class="flex cursor-pointer items-center gap-3">
+                    <input v-model="user.admin" type="checkbox" class="toggle toggle-primary" />
+                    <span class="font-semibold">{{ t('settings2.account.admin') }}</span>
+                </label>
+                <p class="text-sm opacity-70">{{ t('settings2.account.adminHelp') }}</p>
+                <label class="flex cursor-pointer items-center gap-3">
+                    <input v-model="user.two_factor" type="checkbox" class="toggle toggle-primary" />
+                    <span class="font-semibold">{{ t('settings2.account.twoFactor') }}</span>
+                </label>
             </div>
 
-            <div>
-                <button class="btn btn-primary mt-5" type="submit">{{ t('user.save') }}</button>
+            <div class="mt-6 flex flex-wrap justify-end gap-2">
+                <button type="button" class="btn" @click="closeUserModal">{{ t('ui.cancel') }}</button>
+                <button type="submit" class="btn btn-primary">{{ t('settings2.account.create') }}</button>
             </div>
         </form>
     </div>
 
-    <GenericModal :show="showUserModal" title="Add user" :modal-action="addUser">
-        <div class="w-full max-w-125 h-110">
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.name') }}</legend>
-                <input v-model="user.username" type="text" name="username" class="input w-full" />
-            </fieldset>
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.mail') }}</legend>
-                <input v-model="user.mail" type="email" name="username" class="input w-full" />
-            </fieldset>
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.password') }}</legend>
-                <input v-model="user.password" type="password" name="password" class="input w-full" />
-            </fieldset>
-            <fieldset class="fieldset">
-                <legend class="fieldset-legend">{{ t('user.confirmPass') }}</legend>
-                <input v-model="user.confirm" type="password" name="password" class="input w-full" />
-            </fieldset>
-
-            <div class="form-control mt-5">
-                <Multiselect
-                    v-model="user.channel_ids"
-                    :options="configStore.channels"
-                    mode="tags"
-                    :close-on-select="true"
-                    :can-clear="false"
-                    label="name"
-                    value-prop="id"
-                    :classes="multiSelectClasses"
-                />
-            </div>
-
-            <fieldset class="fieldset mt-2 rounded-box w-full">
-                <label class="fieldset-label text-base-content">
-                    <input v-model.number="user.admin" type="checkbox" class="checkbox" />
-                    {{ t('user.admin') }}
-                </label>
-            </fieldset>
-
-            <fieldset class="fieldset mt-2 rounded-box w-full">
-                <label class="fieldset-label text-base-content">
-                    <input v-model="user.two_factor" type="checkbox" class="checkbox" />
-                    {{ t('user.twoFactor') }}
-                </label>
-            </fieldset>
-        </div>
-    </GenericModal>
+    <ConfirmModal
+        :show="showDeleteModal"
+        danger
+        :title="t('settings2.account.deleteConfirmTitle', { name: configStore.configUser.username })"
+        :text="t('settings2.account.deleteConfirmText')"
+        :confirm-label="t('settings2.account.deleteConfirm')"
+        @confirm="deleteUser"
+        @cancel="showDeleteModal = false"
+    />
 </template>

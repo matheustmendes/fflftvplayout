@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { cloneDeep } from 'es-toolkit/object'
 
-import GenericModal from '@/components/utils/GenericModal.vue'
+import AdvancedBlock from '@/components/ui/AdvancedBlock.vue'
+import SaveBar from '@/components/ui/SaveBar.vue'
+import DiscardModal from '@/components/config/DiscardModal.vue'
+import KeyValueEditor from '@/components/config/KeyValueEditor.vue'
+import RestartModal from '@/components/config/RestartModal.vue'
+import SettingsCard from '@/components/config/SettingsCard.vue'
+import SettingsField from '@/components/config/SettingsField.vue'
+import SettingsGroup from '@/components/config/SettingsGroup.vue'
 
 import { authFetch } from '@/composables/authFetch'
+import { usePlayoutDirty } from '@/composables/settingsHelpers'
 import { useAuth } from '@/stores/auth'
 import { useIndex } from '@/stores/index'
 import { useConfig } from '@/stores/config'
@@ -13,16 +22,29 @@ const { t } = useI18n()
 const authStore = useAuth()
 const configStore = useConfig()
 const indexStore = useIndex()
+const dirty = usePlayoutDirty()
+
+const saving = ref(false)
+const showDiscardModal = ref(false)
 
 const logLevels = ['INFO', 'WARNING', 'ERROR']
 const notificationLevels = ['INFO', 'WARNING', 'ERROR', 'FATAL']
-const processingMode = ['folder', 'playlist']
+const processingMode = ['playlist', 'folder']
+
 function outputMode(value: string | undefined): 'desktop' | 'hls' | 'stream' {
     if (value === 'desktop' || value === 'hls' || value === 'stream') {
         return value
     }
 
     return 'stream'
+}
+
+function deliveryLabel(name: string): string {
+    if (name === 'hls' || name === 'stream' || name === 'desktop') {
+        return t(`settings2.output.delivery.${name}`)
+    }
+
+    return name
 }
 
 const extensions = computed({
@@ -36,18 +58,6 @@ const extensions = computed({
 })
 
 const output = computed(() => configStore.playout.output.mode)
-const newProtocolOptionName = ref('')
-const newProtocolOptionValue = ref('')
-const newMuxerOptionName = ref('')
-const newMuxerOptionValue = ref('')
-const newMetadataKey = ref('')
-const newMetadataValue = ref('')
-const newAudioOptionName = ref('')
-const newAudioOptionValue = ref('')
-const newListenerOptionNames = ref<Record<number, string>>({})
-const newListenerOptionValues = ref<Record<number, string>>({})
-const newListenerDemuxerNames = ref<Record<number, string>>({})
-const newListenerDemuxerValues = ref<Record<number, string>>({})
 
 function addLiveListener() {
     const listeners = configStore.playout.ingest.listeners
@@ -65,10 +75,6 @@ function addLiveListener() {
 
 function removeLiveListener(index: number) {
     configStore.playout.ingest.listeners.splice(index, 1)
-    newListenerOptionNames.value = {}
-    newListenerOptionValues.value = {}
-    newListenerDemuxerNames.value = {}
-    newListenerDemuxerValues.value = {}
 }
 
 function changeLiveBackend(index: number) {
@@ -80,85 +86,7 @@ function changeLiveBackend(index: number) {
     listener.demuxer_options = {}
 }
 
-function addListenerOption(index: number) {
-    const listener = configStore.playout.ingest.listeners[index]
-    if (!listener) return
-
-    const name = (newListenerOptionNames.value[index] ?? '').trim()
-    const value = newListenerOptionValues.value[index] ?? ''
-    if (!name || !value.trim() || name in listener.options) return
-
-    listener.options = { ...listener.options, [name]: value }
-    newListenerOptionNames.value[index] = ''
-    newListenerOptionValues.value[index] = ''
-}
-
-function renameListenerOption(index: number, previousName: string, event: Event) {
-    const listener = configStore.playout.ingest.listeners[index]
-    const input = event.target as HTMLInputElement
-    if (!listener) return
-
-    const name = input.value.trim()
-    if (!name || (name !== previousName && name in listener.options)) {
-        input.value = previousName
-        return
-    }
-
-    const options = { ...listener.options }
-    const value = options[previousName]
-    delete options[previousName]
-    options[name] = value
-    listener.options = options
-}
-
-function removeListenerOption(index: number, name: string) {
-    const listener = configStore.playout.ingest.listeners[index]
-    if (!listener) return
-
-    const options = { ...listener.options }
-    delete options[name]
-    listener.options = options
-}
-
-function addListenerDemuxerOption(index: number) {
-    const listener = configStore.playout.ingest.listeners[index]
-    if (!listener) return
-
-    const name = (newListenerDemuxerNames.value[index] ?? '').trim()
-    const value = newListenerDemuxerValues.value[index] ?? ''
-    if (!name || !value.trim() || name in listener.demuxer_options) return
-
-    listener.demuxer_options = { ...listener.demuxer_options, [name]: value }
-    newListenerDemuxerNames.value[index] = ''
-    newListenerDemuxerValues.value[index] = ''
-}
-
-function renameListenerDemuxerOption(index: number, previousName: string, event: Event) {
-    const listener = configStore.playout.ingest.listeners[index]
-    const input = event.target as HTMLInputElement
-    if (!listener) return
-
-    const name = input.value.trim()
-    if (!name || (name !== previousName && name in listener.demuxer_options)) {
-        input.value = previousName
-        return
-    }
-
-    const options = { ...listener.demuxer_options }
-    const value = options[previousName]
-    delete options[previousName]
-    options[name] = value
-    listener.demuxer_options = options
-}
-
-function removeListenerDemuxerOption(index: number, name: string) {
-    const listener = configStore.playout.ingest.listeners[index]
-    if (!listener) return
-
-    const options = { ...listener.demuxer_options }
-    delete options[name]
-    listener.demuxer_options = options
-}
+const forceCustomResolution = ref(false)
 
 const outputId = computed({
     get() {
@@ -171,14 +99,7 @@ const outputId = computed({
             return
         }
 
-        newMuxerOptionName.value = ''
-        newMuxerOptionValue.value = ''
-        newMetadataKey.value = ''
-        newMetadataValue.value = ''
-        newProtocolOptionName.value = ''
-        newProtocolOptionValue.value = ''
-        newAudioOptionName.value = ''
-        newAudioOptionValue.value = ''
+        forceCustomResolution.value = false
 
         configStore.playout.output.id = selected.id
         configStore.playout.output.mode = outputMode(selected.name)
@@ -228,6 +149,39 @@ const outputId = computed({
 })
 
 const hasSelectedOutput = computed(() => configStore.outputs.some((output) => output.id === outputId.value))
+
+const resolutionPresets = [
+    { key: 'p1080', width: 1920, height: 1080 },
+    { key: 'p720', width: 1280, height: 720 },
+    { key: 'p480', width: 854, height: 480 },
+    { key: 'p360', width: 640, height: 360 },
+]
+
+// A friendly picture size that falls back to "custom" (width and height boxes) for any other value.
+const resolutionChoice = computed({
+    get() {
+        if (forceCustomResolution.value) {
+            return 'custom'
+        }
+
+        const { width, height } = configStore.playout.output
+        const preset = resolutionPresets.find((item) => item.width === width && item.height === height)
+
+        return preset?.key ?? 'custom'
+    },
+
+    set(key: string) {
+        const preset = resolutionPresets.find((item) => item.key === key)
+        if (!preset) {
+            forceCustomResolution.value = true
+            return
+        }
+
+        forceCustomResolution.value = false
+        configStore.playout.output.width = preset.width
+        configStore.playout.output.height = preset.height
+    },
+})
 
 interface HlsVariantRow {
     name: string
@@ -308,158 +262,6 @@ function setAudioCodec() {
     configStore.playout.output.audio_options = {}
 }
 
-function setAudioOption(key: string, value: string | number) {
-    configStore.playout.output.audio_options = {
-        ...configStore.playout.output.audio_options,
-        [key]: String(value),
-    }
-}
-
-function addAudioOption() {
-    const options = configStore.playout.output.audio_options
-    const key = newAudioOptionName.value.trim()
-    const value = newAudioOptionValue.value.trim()
-    if (!key || !value || key in options) return
-    configStore.playout.output.audio_options = { ...options, [key]: value }
-    newAudioOptionName.value = ''
-    newAudioOptionValue.value = ''
-}
-
-function renameAudioOption(previousKey: string, event: Event) {
-    const input = event.target as HTMLInputElement
-    const key = input.value.trim()
-    const options = { ...configStore.playout.output.audio_options }
-    if (!key || (key !== previousKey && key in options)) {
-        input.value = previousKey
-        return
-    }
-    const value = options[previousKey]
-    delete options[previousKey]
-    options[key] = value
-    configStore.playout.output.audio_options = options
-}
-
-function removeAudioOption(key: string) {
-    const options = { ...configStore.playout.output.audio_options }
-    delete options[key]
-    configStore.playout.output.audio_options = options
-}
-
-function addMuxerOption() {
-    const options = configStore.playout.output.muxer_options
-    const key = newMuxerOptionName.value.trim()
-    const value = newMuxerOptionValue.value.trim()
-    if (!key || !value || key in options) {
-        return
-    }
-    configStore.playout.output.muxer_options = { ...options, [key]: value }
-    newMuxerOptionName.value = ''
-    newMuxerOptionValue.value = ''
-}
-
-function addProtocolOption() {
-    const options = configStore.playout.output.protocol_options
-    const key = newProtocolOptionName.value.trim()
-    const value = newProtocolOptionValue.value
-    if (!key || !value.trim() || key in options) {
-        return
-    }
-    configStore.playout.output.protocol_options = { ...options, [key]: value }
-    newProtocolOptionName.value = ''
-    newProtocolOptionValue.value = ''
-}
-
-function renameProtocolOption(previousKey: string, event: Event) {
-    const input = event.target as HTMLInputElement
-    const key = input.value.trim()
-    const options = { ...configStore.playout.output.protocol_options }
-    if (!key || (key !== previousKey && key in options)) {
-        input.value = previousKey
-        return
-    }
-    const value = options[previousKey]
-    delete options[previousKey]
-    options[key] = value
-    configStore.playout.output.protocol_options = options
-}
-
-function setProtocolOption(key: string, value: string) {
-    configStore.playout.output.protocol_options = {
-        ...configStore.playout.output.protocol_options,
-        [key]: value,
-    }
-}
-
-function removeProtocolOption(key: string) {
-    const options = { ...configStore.playout.output.protocol_options }
-    delete options[key]
-    configStore.playout.output.protocol_options = options
-}
-
-function renameMuxerOption(previousKey: string, event: Event) {
-    const input = event.target as HTMLInputElement
-    const key = input.value.trim()
-    const options = { ...configStore.playout.output.muxer_options }
-    if (!key || (key !== previousKey && key in options)) {
-        input.value = previousKey
-        return
-    }
-    const value = options[previousKey]
-    delete options[previousKey]
-    options[key] = value
-    configStore.playout.output.muxer_options = options
-}
-
-function setMuxerOption(key: string, value: string) {
-    configStore.playout.output.muxer_options = {
-        ...configStore.playout.output.muxer_options,
-        [key]: value,
-    }
-}
-
-function removeMuxerOption(key: string) {
-    const options = { ...configStore.playout.output.muxer_options }
-    delete options[key]
-    configStore.playout.output.muxer_options = options
-}
-
-function addMetadata() {
-    const metadata = configStore.playout.output.metadata_options
-    const key = newMetadataKey.value.trim()
-    const value = newMetadataValue.value.trim()
-    if (!key || !value || Object.hasOwn(metadata, key)) return
-    configStore.playout.output.metadata_options = { ...metadata, [key]: value }
-    newMetadataKey.value = ''
-    newMetadataValue.value = ''
-}
-
-function renameMetadata(previousKey: string, event: Event) {
-    const input = event.target as HTMLInputElement
-    const key = input.value.trim()
-    const metadata = { ...configStore.playout.output.metadata_options }
-    if (!key || (key !== previousKey && Object.hasOwn(metadata, key))) {
-        input.value = previousKey
-        return
-    }
-    const value = metadata[previousKey]
-    delete metadata[previousKey]
-    metadata[key] = value
-    configStore.playout.output.metadata_options = metadata
-}
-
-function setMetadata(key: string, value: string) {
-    configStore.playout.output.metadata_options = {
-        ...configStore.playout.output.metadata_options,
-        [key]: value,
-    }
-}
-
-function removeMetadata(key: string) {
-    const metadata = { ...configStore.playout.output.metadata_options }
-    delete metadata[key]
-    configStore.playout.output.metadata_options = metadata
-}
-
 function eventValue(event: Event): string {
     return (event.target as HTMLInputElement).value
 }
@@ -516,13 +318,25 @@ const formatIgnoreLines = computed({
     },
 })
 
+function discardChanges() {
+    configStore.playout = cloneDeep(configStore.playoutSaved)
+    forceCustomResolution.value = false
+    showDiscardModal.value = false
+}
+
 async function onSubmitPlayout() {
+    if (saving.value) {
+        return
+    }
+
+    saving.value = true
+
     try {
         const update = await configStore.setPlayoutConfig(configStore.playout)
         configStore.onetimeInfo = true
         const { requires_restart: requiresRestart } = update
 
-        indexStore.msgAlert('success', t('config.updatePlayoutSuccess'), 2)
+        indexStore.msgAlert('success', t('settings2.output.saved'), 2)
 
         const id = configStore.channels[configStore.i]?.id
         const response = await authFetch<string>(`/api/control/${id}/process`, {
@@ -537,623 +351,221 @@ async function onSubmitPlayout() {
         await configStore.getPlayoutConfig()
         await configStore.getPlayoutOutputs()
     } catch (error) {
-        indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 3)
+        const detail = error instanceof Error ? error.message : String(error)
+        indexStore.msgAlert('error', `${t('settings2.output.saveFailed')} ${detail}`, 4)
+    } finally {
+        saving.value = false
     }
 }
 </script>
 <template>
-    <div class="max-w-300 xs:pe-8">
-        <h2 class="pt-3 text-3xl">{{ t('config.playoutConf') }}</h2>
-        <form
-            v-if="configStore.playout"
-            class="mt-10 grid md:grid-cols-[180px_auto] gap-5"
-            @submit.prevent="onSubmitPlayout"
+    <form v-if="configStore.playout" class="space-y-5" @submit.prevent="onSubmitPlayout">
+        <SettingsCard
+            icon="bi-broadcast"
+            :title="t('settings2.output.delivery.title')"
+            :text="t('settings2.output.delivery.text')"
         >
-            <div class="text-xl pt-3 md:text-right">{{ t('config.general') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.generalHelp') }}
-                    </div>
-                </label>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Stop Threshold</legend>
-                    <input
-                        v-model="configStore.playout.general.stop_threshold"
-                        type="number"
-                        min="3"
-                        class="input input-sm w-full max-w-36"
-                    />
-                    <p class="fieldset-label items-baseline">
-                        {{ t('config.stopThreshold') }}
-                    </p>
-                </fieldset>
-            </div>
+            <SettingsField
+                v-if="hasSelectedOutput"
+                :label="t('settings2.output.delivery.label')"
+                :help="t('settings2.output.delivery.help')"
+            >
+                <select v-model.number="outputId" class="select w-full">
+                    <option v-for="item in configStore.outputs" :key="item.id" :value="item.id">
+                        {{ deliveryLabel(item.name) }}
+                    </option>
+                </select>
+            </SettingsField>
 
-            <template v-if="configStore.playout.mail.show">
-                <div class="text-xl pt-3 md:text-right">{{ t('config.mail') }}:</div>
-                <div class="md:pt-4">
-                    <label class="form-control mb-2">
-                        <div class="whitespace-pre-line">
-                            {{ t('config.mailHelp') }}
-                        </div>
-                    </label>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">Subject</legend>
-                        <input
-                            v-model="configStore.playout.mail.subject"
-                            type="text"
-                            name="subject"
-                            class="input input-sm w-full max-w-lg"
-                        />
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">Recipient</legend>
-                        <input
-                            v-model="configStore.playout.mail.recipient"
-                            type="text"
-                            name="recipient"
-                            class="input input-sm w-full max-w-lg"
-                        />
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">Mail Level</legend>
-                        <select v-model="configStore.playout.mail.mail_level" class="select select-sm w-full max-w-xs">
-                            <option v-for="level in logLevels" :key="level" :value="level">{{ level }}</option>
-                        </select>
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">Interval</legend>
-                        <input
-                            v-model="configStore.playout.mail.interval"
-                            type="number"
-                            min="30"
-                            step="10"
-                            class="input input-sm w-full max-w-36"
-                        />
-                        <p class="fieldset-label items-baseline">{{ t('config.mailInterval') }}</p>
-                    </fieldset>
-                </div>
-            </template>
-
-            <template v-if="configStore.playout.notification.show">
-                <div class="text-xl pt-3 md:text-right">{{ t('config.notification') }}:</div>
-                <div class="md:pt-4">
-                    <p class="mb-2 whitespace-pre-line">{{ t('config.notificationHelp') }}</p>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">{{ t('config.notificationTopic') }}</legend>
-                        <input
-                            v-model="configStore.playout.notification.topic"
-                            type="text"
-                            class="input input-sm w-full max-w-lg"
-                        />
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">{{ t('config.notificationLevel') }}</legend>
-                        <select
-                            v-model="configStore.playout.notification.level"
-                            class="select select-sm w-full max-w-xs"
-                        >
-                            <option v-for="level in notificationLevels" :key="level" :value="level">{{ level }}</option>
-                        </select>
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">{{ t('config.notificationTags') }}</legend>
-                        <input
-                            v-model="configStore.playout.notification.tags"
-                            type="text"
-                            class="input input-sm w-full max-w-lg"
-                        />
-                    </fieldset>
-                </div>
-            </template>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.logging') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.logHelp') }}
-                    </div>
-                </label>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">ffmpeg Level</legend>
-                    <select v-model="configStore.playout.logging.ffmpeg_level" class="select select-sm w-full max-w-xs">
-                        <option v-for="level in logLevels" :key="level" :value="level">{{ level }}</option>
-                    </select>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Ingest Level</legend>
-                    <select v-model="configStore.playout.logging.ingest_level" class="select select-sm w-full max-w-xs">
-                        <option v-for="level in logLevels" :key="level" :value="level">{{ level }}</option>
-                    </select>
-                </fieldset>
-                <fieldset class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="configStore.playout.logging.detect_silence" type="checkbox" class="checkbox" />
-                        Detect Silence
-                    </label>
-                    <p class="fieldset-label items-baseline">{{ t('config.logDetect') }}</p>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Ignore Lines</legend>
-                    <input v-model="formatIgnoreLines" type="text" class="input input-sm w-full max-w-full truncate" />
-                    <p class="fieldset-label items-baseline">{{ t('config.logIgnore') }}</p>
-                </fieldset>
-            </div>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.processing') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.processingHelp') }}
-                    </div>
-                </label>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Mode</legend>
-                    <select v-model="configStore.playout.processing.mode" class="select select-sm w-full max-w-xs">
-                        <option v-for="mode in processingMode" :key="mode" :value="mode">{{ mode }}</option>
-                    </select>
-                </fieldset>
-
-                <fieldset class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="configStore.playout.processing.add_logo" type="checkbox" class="checkbox" />
-                        Add Logo
-                    </label>
-                </fieldset>
-
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Logo</legend>
-                    <input
-                        v-model="configStore.playout.processing.logo"
-                        type="text"
-                        name="logo"
-                        class="input input-sm w-full max-w-lg"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.processingLogoPath') }}</p>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Logo Opacity</legend>
-                    <input
-                        v-model="configStore.playout.processing.logo_opacity"
-                        type="number"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        class="input input-sm w-full max-w-36"
-                    />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Logo Scale</legend>
-                    <input
-                        v-model="configStore.playout.processing.logo_scale"
-                        type="text"
-                        name="logo_scale"
-                        class="input input-sm w-full max-w-md"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.processingLogoScale') }}</p>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Logo Position</legend>
-                    <input
-                        v-model="configStore.playout.processing.logo_position"
-                        type="text"
-                        name="logo_position"
-                        class="input input-sm w-full max-w-md"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.processingLogoPosition') }}</p>
-                </fieldset>
-                <fieldset class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="configStore.playout.processing.vtt_enable" type="checkbox" class="checkbox" />
-                        Enable VTT
-                    </label>
-                    <p class="fieldset-label items-baseline">{{ t('config.processingVTTEnable') }}</p>
-                </fieldset>
-
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">VTT Dummy</legend>
-                    <input
-                        v-model="configStore.playout.processing.vtt_dummy"
-                        type="text"
-                        name="vtt_dummy"
-                        class="input input-sm w-full max-w-lg"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.processingVTTDummy') }}</p>
-                </fieldset>
-
-                <div v-if="configStore.playout.processing.vtt_enable" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.hlsSubtitleName') }}</span>
-                        <input
-                            v-model.trim="configStore.playout.processing.vtt_name"
-                            type="text"
-                            class="input input-sm w-full"
-                        />
-                    </label>
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.hlsSubtitleLanguage') }}</span>
-                        <input
-                            v-model.trim="configStore.playout.processing.vtt_language"
-                            type="text"
-                            class="input input-sm w-full"
-                        />
-                    </label>
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.hlsSubtitleDefault') }}</span>
-                        <input v-model="configStore.playout.processing.vtt_default" type="checkbox" class="toggle" />
-                    </label>
-                </div>
-            </div>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.ingest') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.ingestHelp') }}
-                    </div>
-                </label>
-
-                <div
-                    v-for="(listener, index) in configStore.playout.ingest.listeners"
-                    :key="listener.id || `new-${index}`"
-                    class="rounded-box border border-base-300 p-3 mb-3"
-                >
-                    <div class="flex items-center justify-between gap-3">
-                        <label class="fieldset-label text-base-content">
-                            <input v-model="listener.enabled" type="checkbox" class="checkbox" />
-                            {{ t('config.liveListenerEnabled') }}
-                        </label>
-                        <button type="button" class="btn btn-ghost btn-sm" @click="removeLiveListener(index)">
-                            {{ t('config.liveListenerRemove') }}
-                        </button>
-                    </div>
-                    <div class="grid gap-3 md:grid-cols-2">
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.liveListenerName') }}</span>
-                            <input v-model="listener.name" type="text" class="input input-sm w-full" />
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.liveListenerBackend') }}</span>
-                            <select
-                                v-model="listener.backend"
-                                class="select select-sm w-full"
-                                @change="changeLiveBackend(index)"
-                            >
-                                <option value="rtmp">RTMP</option>
-                                <option value="srt">SRT</option>
-                            </select>
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.liveListenerUrl') }}</span>
-                            <input v-model="listener.identifier" type="text" class="input input-sm w-full" />
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.liveListenerPriority') }}</span>
-                            <input
-                                v-model.number="listener.priority"
-                                type="number"
-                                min="0"
-                                max="100"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                    </div>
-                    <div class="collapse collapse-plus bg-base-100/40 border-2 border-base-100 mt-4">
-                        <input
-                            type="checkbox"
-                            :checked="
-                                Object.keys(listener.options).length !== 0 ||
-                                Object.keys(listener.demuxer_options).length !== 0
-                            "
-                        />
-                        <div class="collapse-title font-semibold">{{ t('player.advanced') }}</div>
-                        <div class="collapse-content">
-                            <fieldset class="fieldset mt-2">
-                                <legend class="fieldset-legend">{{ t('config.liveListenerOptions') }}</legend>
-                                <p class="fieldset-label mb-2">{{ t('config.liveListenerOptionsHelp') }}</p>
-                                <div
-                                    v-for="[name, value] in Object.entries(listener.options)"
-                                    :key="name"
-                                    class="flex flex-wrap items-center gap-2 mb-2"
-                                >
-                                    <input
-                                        :value="name"
-                                        type="text"
-                                        class="input input-sm w-48"
-                                        @change="renameListenerOption(index, name, $event)"
-                                    />
-                                    <input
-                                        :value="value"
-                                        type="text"
-                                        class="input input-sm grow"
-                                        @input="listener.options[name] = eventValue($event)"
-                                    />
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-ghost"
-                                        @click="removeListenerOption(index, name)"
-                                    >
-                                        {{ t('config.remove') }}
-                                    </button>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <input
-                                        v-model="newListenerOptionNames[index]"
-                                        type="text"
-                                        class="input input-sm w-48"
-                                        :placeholder="t('config.protocolOptionName')"
-                                    />
-                                    <input
-                                        v-model="newListenerOptionValues[index]"
-                                        type="text"
-                                        class="input input-sm grow"
-                                        :placeholder="t('config.protocolOptionValue')"
-                                    />
-                                    <button type="button" class="btn btn-sm" @click="addListenerOption(index)">
-                                        {{ t('config.addProtocolOption') }}
-                                    </button>
-                                </div>
-                            </fieldset>
-                            <fieldset class="fieldset mt-2">
-                                <legend class="fieldset-legend">{{ t('config.liveDemuxerOptions') }}</legend>
-                                <p class="fieldset-label mb-2">{{ t('config.liveDemuxerOptionsHelp') }}</p>
-                                <div
-                                    v-for="[name, value] in Object.entries(listener.demuxer_options)"
-                                    :key="name"
-                                    class="flex flex-wrap items-center gap-2 mb-2"
-                                >
-                                    <input
-                                        :value="name"
-                                        type="text"
-                                        class="input input-sm w-48"
-                                        @change="renameListenerDemuxerOption(index, name, $event)"
-                                    />
-                                    <input
-                                        :value="value"
-                                        type="text"
-                                        class="input input-sm grow"
-                                        @input="listener.demuxer_options[name] = eventValue($event)"
-                                    />
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-ghost"
-                                        @click="removeListenerDemuxerOption(index, name)"
-                                    >
-                                        {{ t('config.remove') }}
-                                    </button>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <input
-                                        v-model="newListenerDemuxerNames[index]"
-                                        type="text"
-                                        class="input input-sm w-48"
-                                        :placeholder="t('config.protocolOptionName')"
-                                    />
-                                    <input
-                                        v-model="newListenerDemuxerValues[index]"
-                                        type="text"
-                                        class="input input-sm grow"
-                                        :placeholder="t('config.protocolOptionValue')"
-                                    />
-                                    <button type="button" class="btn btn-sm" @click="addListenerDemuxerOption(index)">
-                                        {{ t('config.addDemuxerOption') }}
-                                    </button>
-                                </div>
-                            </fieldset>
-                        </div>
-                    </div>
-                </div>
-                <button type="button" class="btn btn-sm btn-outline" @click="addLiveListener">
-                    {{ t('config.liveListenerAdd') }}
-                </button>
-            </div>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.playlist') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.playlistHelp') }}
-                    </div>
-                </label>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Day Start</legend>
-                    <input
-                        v-model="configStore.playout.playlist.day_start"
-                        type="text"
-                        name="day_start"
-                        class="input input-sm w-full max-w-xs"
-                        pattern="(([01]?[0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9]|now|none)"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.playlistDayStart') }}</p>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Length</legend>
-                    <input
-                        v-model="configStore.playout.playlist.length"
-                        type="text"
-                        name="length"
-                        class="input input-sm w-full max-w-xs"
-                        pattern="([01]?[0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9]"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.playlistLength') }}</p>
-                </fieldset>
-                <fieldset class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="configStore.playout.playlist.infinit" type="checkbox" class="checkbox" />
-                        Infinit
-                    </label>
-                    <p class="fieldset-label items-baseline">{{ t('config.playlistInfinit') }}</p>
-                </fieldset>
-            </div>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.storage') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.storageHelp') }}
-                    </div>
-                </label>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Filler</legend>
-                    <input
-                        v-model="configStore.playout.storage.filler"
-                        type="text"
-                        name="filler"
-                        class="input input-sm w-full max-w-lg"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.storageFiller') }}</p>
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Extensions</legend>
-                    <input v-model="extensions" type="text" name="extensions" class="input input-sm w-full max-w-lg" />
-                    <p class="fieldset-label items-baseline">{{ t('config.storageExtension') }}</p>
-                </fieldset>
-                <fieldset class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="configStore.playout.storage.shuffle" type="checkbox" class="checkbox" />
-                        Shuffle
-                    </label>
-                    <p class="fieldset-label items-baseline">{{ t('config.storageShuffle') }}</p>
-                </fieldset>
-            </div>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.task') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.taskHelp') }}
-                    </div>
-                </label>
-
-                <fieldset class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="configStore.playout.task.enable" type="checkbox" class="checkbox" />
-                        Enable
-                    </label>
-                </fieldset>
-
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Path</legend>
-                    <input
-                        v-model="configStore.playout.task.path"
-                        type="text"
-                        name="task_path"
-                        class="input input-sm w-full max-w-lg"
-                    />
-                    <p class="fieldset-label items-baseline">{{ t('config.taskPath') }}</p>
-                </fieldset>
-            </div>
-
-            <div class="text-xl pt-3 md:text-right">{{ t('config.output') }}:</div>
-            <div class="md:pt-4">
-                <label class="form-control mb-2">
-                    <div class="whitespace-pre-line">
-                        {{ t('config.outputHelp') }}
-                    </div>
-                </label>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Mode</legend>
-                    <select v-if="hasSelectedOutput" v-model.number="outputId" class="select select-sm w-full max-w-xs">
-                        <option v-for="output in configStore.outputs" :key="output.id" :value="output.id">
-                            {{ output.name }}
-                        </option>
-                    </select>
-                </fieldset>
-                <div v-if="configStore.playout.output.mode === 'stream'" class="grid gap-3 sm:grid-cols-2">
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">{{ t('config.streamType') }}</legend>
-                        <select v-model="configStore.playout.output.stream_type" class="select select-sm w-full">
+            <template v-if="output === 'stream'">
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <SettingsField
+                        :label="t('settings2.output.delivery.protocol')"
+                        :help="t('settings2.output.delivery.protocolHelp')"
+                    >
+                        <select v-model="configStore.playout.output.stream_type" class="select w-full">
                             <option value="rtmp">RTMP</option>
                             <option value="srt">SRT</option>
                             <option value="udp">UDP</option>
-                            <option value="custom">Custom</option>
+                            <option value="custom">{{ t('settings2.output.delivery.custom') }}</option>
                         </select>
-                    </fieldset>
-                    <fieldset v-if="configStore.playout.output.stream_type === 'custom'" class="fieldset">
-                        <legend class="fieldset-legend">{{ t('config.streamFormat') }}</legend>
+                    </SettingsField>
+                    <SettingsField
+                        v-if="configStore.playout.output.stream_type === 'custom'"
+                        :label="t('settings2.output.delivery.customFormat')"
+                    >
                         <input
                             v-model="configStore.playout.output.stream_format"
                             type="text"
-                            class="input input-sm w-full"
+                            class="input w-full"
                             placeholder="decklink"
                         />
-                    </fieldset>
-                    <fieldset class="fieldset">
-                        <legend class="fieldset-legend">
-                            {{
-                                configStore.playout.output.stream_type === 'custom'
-                                    ? t('config.streamTarget')
-                                    : t('config.streamUrl')
-                            }}
-                        </legend>
+                    </SettingsField>
+                </div>
+                <SettingsField
+                    :label="
+                        configStore.playout.output.stream_type === 'custom'
+                            ? t('settings2.output.delivery.customTarget')
+                            : t('settings2.output.delivery.destination')
+                    "
+                    :help="t('settings2.output.delivery.destinationHelp')"
+                    :hint="t('settings2.output.delivery.destinationHint')"
+                >
+                    <input
+                        v-model="configStore.playout.output.stream_url"
+                        :type="configStore.playout.output.stream_type === 'custom' ? 'text' : 'url'"
+                        class="input w-full"
+                        placeholder="rtmp://servidor/canal/chave"
+                    />
+                </SettingsField>
+            </template>
+
+            <label v-if="output === 'desktop'" class="flex cursor-pointer items-center gap-3">
+                <input
+                    v-model="configStore.playout.output.desktop_fullscreen"
+                    type="checkbox"
+                    class="toggle toggle-primary"
+                />
+                <span class="font-semibold">{{ t('settings2.output.delivery.fullscreen') }}</span>
+            </label>
+        </SettingsCard>
+
+        <SettingsCard
+            icon="bi-aspect-ratio"
+            :title="t('settings2.output.quality.title')"
+            :text="t('settings2.output.quality.text')"
+        >
+            <SettingsField :label="t('settings2.output.quality.label')" :help="t('settings2.output.quality.help')">
+                <select v-model="resolutionChoice" class="select w-full max-w-md">
+                    <option v-for="preset in resolutionPresets" :key="preset.key" :value="preset.key">
+                        {{ t(`settings2.output.quality.${preset.key}`) }}
+                    </option>
+                    <option value="custom">{{ t('settings2.output.quality.custom') }}</option>
+                </select>
+            </SettingsField>
+            <div v-if="resolutionChoice === 'custom'" class="grid gap-4 sm:grid-cols-2 max-w-md">
+                <SettingsField :label="t('settings2.output.quality.width')">
+                    <input
+                        v-model.number="configStore.playout.output.width"
+                        type="number"
+                        min="1"
+                        step="1"
+                        class="input w-full"
+                    />
+                </SettingsField>
+                <SettingsField :label="t('settings2.output.quality.height')">
+                    <input
+                        v-model.number="configStore.playout.output.height"
+                        type="number"
+                        min="1"
+                        step="1"
+                        class="input w-full"
+                    />
+                </SettingsField>
+            </div>
+        </SettingsCard>
+
+        <SettingsCard
+            icon="bi-badge-tm"
+            :title="t('settings2.output.logo.title')"
+            :text="t('settings2.output.logo.text')"
+        >
+            <label class="flex cursor-pointer items-center gap-3">
+                <input
+                    v-model="configStore.playout.processing.add_logo"
+                    type="checkbox"
+                    class="toggle toggle-primary"
+                />
+                <span class="font-semibold">{{ t('settings2.output.logo.show') }}</span>
+            </label>
+            <SettingsField
+                :label="t('settings2.output.logo.file')"
+                :help="t('settings2.output.logo.help')"
+                :hint="t('settings2.output.logo.hint')"
+            >
+                <input v-model="configStore.playout.processing.logo" type="text" name="logo" class="input w-full" />
+            </SettingsField>
+        </SettingsCard>
+
+        <SettingsCard
+            icon="bi-collection-play"
+            :title="t('settings2.output.program.title')"
+            :text="t('settings2.output.program.text')"
+        >
+            <SettingsField :label="t('settings2.output.program.mode')" :help="t('settings2.output.program.modeHelp')">
+                <select v-model="configStore.playout.processing.mode" class="select w-full max-w-md">
+                    <option v-for="mode in processingMode" :key="mode" :value="mode">
+                        {{ t(`settings2.output.program.${mode}`) }}
+                    </option>
+                </select>
+            </SettingsField>
+            <SettingsField
+                :label="t('settings2.output.program.filler')"
+                :help="t('settings2.output.program.fillerHelp')"
+            >
+                <input v-model="configStore.playout.storage.filler" type="text" name="filler" class="input w-full" />
+            </SettingsField>
+        </SettingsCard>
+
+        <AdvancedBlock>
+            <SettingsGroup :title="t('settings2.output.adv.logo')">
+                <p class="text-sm opacity-70">{{ t('config.processingLogoPath') }}</p>
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <SettingsField
+                        :label="t('settings2.output.adv.logoOpacity')"
+                        :hint="t('settings2.output.adv.logoOpacityHint')"
+                    >
                         <input
-                            v-model="configStore.playout.output.stream_url"
-                            :type="configStore.playout.output.stream_type === 'custom' ? 'text' : 'url'"
+                            v-model="configStore.playout.processing.logo_opacity"
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.01"
                             class="input input-sm w-full"
                         />
-                    </fieldset>
-                </div>
-                <fieldset v-if="configStore.playout.output.mode === 'desktop'" class="fieldset mt-2 rounded-box w-full">
-                    <label class="fieldset-label text-base-content">
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.output.adv.logoScale')" :hint="t('config.processingLogoScale')">
                         <input
-                            v-model="configStore.playout.output.desktop_fullscreen"
-                            type="checkbox"
-                            class="checkbox"
+                            v-model="configStore.playout.processing.logo_scale"
+                            type="text"
+                            name="logo_scale"
+                            class="input input-sm w-full"
                         />
-                        Start Fullscreen
-                    </label>
-                </fieldset>
+                    </SettingsField>
+                    <SettingsField
+                        :label="t('settings2.output.adv.logoPosition')"
+                        :hint="t('config.processingLogoPosition')"
+                    >
+                        <input
+                            v-model="configStore.playout.processing.logo_position"
+                            type="text"
+                            name="logo_position"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                </div>
+            </SettingsGroup>
 
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.outputFormat') }}</legend>
-                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        <label class="fieldset">
-                            <span class="fieldset-legend">Width</span>
-                            <input
-                                v-model.number="configStore.playout.output.width"
-                                type="number"
-                                min="1"
-                                step="1"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">Height</span>
-                            <input
-                                v-model.number="configStore.playout.output.height"
-                                type="number"
-                                min="1"
-                                step="1"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">FPS</span>
-                            <input
-                                v-model.number="configStore.playout.output.fps"
-                                type="number"
-                                min="1"
-                                step="0.01"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                    </div>
-                </fieldset>
-
-                <fieldset v-if="output === 'hls' || output === 'stream'" class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.encodingSettings') }}</legend>
-                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.videoCodec') }}</span>
+            <SettingsGroup :title="t('settings2.output.adv.video')" :text="t('settings2.output.adv.videoText')">
+                <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <SettingsField :label="t('settings2.output.adv.fps')">
+                        <input
+                            v-model.number="configStore.playout.output.fps"
+                            type="number"
+                            min="1"
+                            step="0.01"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <template v-if="output === 'hls' || output === 'stream'">
+                        <SettingsField :label="t('config.videoCodec')">
                             <select v-model="configStore.playout.output.video_codec" class="select select-sm w-full">
                                 <option v-for="codec in codecOptions.video" :key="codec.name" :value="codec.name">
                                     {{ codecLabel(codec) }}
                                 </option>
                             </select>
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.audioCodec') }}</span>
+                        </SettingsField>
+                        <SettingsField :label="t('config.audioCodec')">
                             <select
                                 v-model="configStore.playout.output.audio_codec"
                                 class="select select-sm w-full"
@@ -1163,10 +575,9 @@ async function onSubmitPlayout() {
                                     {{ codecLabel(codec) }}
                                 </option>
                             </select>
-                        </label>
+                        </SettingsField>
                         <template v-for="setting in videoSettings" :key="setting.key">
-                            <label v-if="settingIsVisible(setting)" class="fieldset">
-                                <span class="fieldset-legend">{{ setting.label }}</span>
+                            <SettingsField v-if="settingIsVisible(setting)" :label="setting.label">
                                 <select
                                     v-if="setting.kind === 'select'"
                                     :value="configStore.playout.output.video_options[setting.key]"
@@ -1187,355 +598,429 @@ async function onSubmitPlayout() {
                                     class="input input-sm w-full"
                                     @input="setVideoOption(setting.key, eventValue($event))"
                                 />
-                            </label>
+                            </SettingsField>
                         </template>
-                        <label v-if="audioUsesBitrate" class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.audioBitrate') }}</span>
+                        <SettingsField v-if="audioUsesBitrate" :label="t('config.audioBitrate')">
                             <input
                                 v-model.number="configStore.playout.output.audio_bitrate"
                                 type="number"
                                 min="1"
                                 class="input input-sm w-full"
                             />
-                        </label>
-                    </div>
-                </fieldset>
-
-                <div
-                    class=""
-                    :class="{
-                        'collapse collapse-plus bg-base-100/40 border-2 border-base-100 my-4': output !== 'desktop',
-                    }"
-                >
-                    <input
-                        v-if="output !== 'desktop'"
-                        type="checkbox"
-                        :checked="
-                            Object.keys(configStore.playout.output.audio_options).length !== 0 ||
-                            Object.keys(configStore.playout.output.muxer_options).length !== 0 ||
-                            Object.keys(configStore.playout.output.metadata_options).length !== 0 ||
-                            Object.keys(configStore.playout.output.protocol_options).length !== 0
-                        "
-                    />
-                    <div v-if="output !== 'desktop'" class="collapse-title font-semibold">
-                        {{ t('player.advanced') }}
-                    </div>
-                    <div class="collapse-content">
-                        <fieldset v-if="output === 'hls' || output === 'stream'" class="fieldset">
-                            <legend class="fieldset-legend">{{ t('config.audioEncoderOptions') }}</legend>
-                            <p class="fieldset-label items-baseline mb-2">{{ t('config.audioEncoderOptionsHelp') }}</p>
-                            <div
-                                v-for="[key, value] in Object.entries(configStore.playout.output.audio_options)"
-                                :key="key"
-                                class="flex flex-wrap items-center gap-2 mb-2"
-                            >
-                                <input
-                                    :value="key"
-                                    type="text"
-                                    class="input input-sm w-48"
-                                    @change="renameAudioOption(key, $event)"
-                                />
-                                <input
-                                    :value="value"
-                                    type="text"
-                                    class="input input-sm grow"
-                                    @input="setAudioOption(key, eventValue($event))"
-                                />
-                                <button class="btn btn-sm btn-ghost" type="button" @click="removeAudioOption(key)">
-                                    {{ t('config.remove') }}
-                                </button>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <input
-                                    v-model="newAudioOptionName"
-                                    type="text"
-                                    class="input input-sm w-48"
-                                    :placeholder="t('config.audioOptionName')"
-                                />
-                                <input
-                                    v-model="newAudioOptionValue"
-                                    type="text"
-                                    class="input input-sm grow"
-                                    :placeholder="t('config.audioOptionValue')"
-                                />
-                                <button
-                                    class="btn btn-sm"
-                                    type="button"
-                                    :disabled="
-                                        !newAudioOptionName.trim() ||
-                                        !newAudioOptionValue.trim() ||
-                                        newAudioOptionName.trim() in configStore.playout.output.audio_options
-                                    "
-                                    @click="addAudioOption"
-                                >
-                                    {{ t('config.addAudioOption') }}
-                                </button>
-                            </div>
-                        </fieldset>
-
-                        <fieldset v-if="output === 'hls' || output === 'stream'" class="fieldset">
-                            <legend class="fieldset-legend">{{ t('config.muxerOptions') }}</legend>
-                            <p class="fieldset-label items-baseline mb-2">{{ t('config.muxerOptionsHelp') }}</p>
-                            <div
-                                v-for="[key, value] in Object.entries(configStore.playout.output.muxer_options)"
-                                :key="key"
-                                class="flex flex-wrap items-center gap-2 mb-2"
-                            >
-                                <input
-                                    :value="key"
-                                    type="text"
-                                    name="muxer_option_key"
-                                    class="input input-sm w-48"
-                                    @change="renameMuxerOption(key, $event)"
-                                />
-                                <input
-                                    :value="value"
-                                    type="text"
-                                    name="muxer_option_value"
-                                    class="input input-sm grow"
-                                    @input="setMuxerOption(key, eventValue($event))"
-                                />
-                                <button class="btn btn-sm btn-ghost" type="button" @click="removeMuxerOption(key)">
-                                    {{ t('config.remove') }}
-                                </button>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <input
-                                    v-model="newMuxerOptionName"
-                                    type="text"
-                                    class="input input-sm w-48"
-                                    :placeholder="t('config.muxerOptionName')"
-                                />
-                                <input
-                                    v-model="newMuxerOptionValue"
-                                    type="text"
-                                    class="input input-sm grow"
-                                    :placeholder="t('config.muxerOptionValue')"
-                                />
-                                <button
-                                    class="btn btn-sm"
-                                    type="button"
-                                    :disabled="
-                                        !newMuxerOptionName.trim() ||
-                                        !newMuxerOptionValue.trim() ||
-                                        newMuxerOptionName.trim() in configStore.playout.output.muxer_options
-                                    "
-                                    @click="addMuxerOption"
-                                >
-                                    {{ t('config.addMuxerOption') }}
-                                </button>
-                            </div>
-                        </fieldset>
-
-                        <fieldset v-if="output === 'hls' || output === 'stream'" class="fieldset">
-                            <legend class="fieldset-legend">{{ t('config.outputMetadata') }}</legend>
-                            <p class="fieldset-label items-baseline mb-2">{{ t('config.outputMetadataHelp') }}</p>
-                            <div
-                                v-for="[key, value] in Object.entries(configStore.playout.output.metadata_options)"
-                                :key="key"
-                                class="flex flex-wrap items-center gap-2 mb-2"
-                            >
-                                <input
-                                    :value="key"
-                                    type="text"
-                                    class="input input-sm w-48"
-                                    @change="renameMetadata(key, $event)"
-                                />
-                                <input
-                                    :value="value"
-                                    type="text"
-                                    class="input input-sm grow"
-                                    @input="setMetadata(key, eventValue($event))"
-                                />
-                                <button class="btn btn-sm btn-ghost" type="button" @click="removeMetadata(key)">
-                                    {{ t('config.remove') }}
-                                </button>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <input
-                                    v-model="newMetadataKey"
-                                    type="text"
-                                    class="input input-sm w-48"
-                                    :placeholder="t('config.metadataKey')"
-                                />
-                                <input
-                                    v-model="newMetadataValue"
-                                    type="text"
-                                    class="input input-sm grow"
-                                    :placeholder="t('config.metadataValue')"
-                                />
-                                <button
-                                    class="btn btn-sm"
-                                    type="button"
-                                    :disabled="
-                                        !newMetadataKey.trim() ||
-                                        !newMetadataValue.trim() ||
-                                        Object.hasOwn(
-                                            configStore.playout.output.metadata_options,
-                                            newMetadataKey.trim(),
-                                        )
-                                    "
-                                    @click="addMetadata"
-                                >
-                                    {{ t('config.addMetadata') }}
-                                </button>
-                            </div>
-                        </fieldset>
-
-                        <fieldset v-if="output === 'stream'" class="fieldset">
-                            <legend class="fieldset-legend">{{ t('config.protocolOptions') }}</legend>
-                            <p class="fieldset-label items-baseline mb-2">{{ t('config.protocolOptionsHelp') }}</p>
-                            <div
-                                v-for="[key, value] in Object.entries(configStore.playout.output.protocol_options)"
-                                :key="key"
-                                class="flex flex-wrap items-center gap-2 mb-2"
-                            >
-                                <input
-                                    :value="key"
-                                    type="text"
-                                    name="protocol_option_key"
-                                    class="input input-sm w-48"
-                                    @change="renameProtocolOption(key, $event)"
-                                />
-                                <input
-                                    :value="value"
-                                    type="text"
-                                    name="protocol_option_value"
-                                    class="input input-sm grow"
-                                    @input="setProtocolOption(key, eventValue($event))"
-                                />
-                                <button class="btn btn-sm btn-ghost" type="button" @click="removeProtocolOption(key)">
-                                    {{ t('config.remove') }}
-                                </button>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <input
-                                    v-model="newProtocolOptionName"
-                                    type="text"
-                                    class="input input-sm w-48"
-                                    :placeholder="t('config.protocolOptionName')"
-                                />
-                                <input
-                                    v-model="newProtocolOptionValue"
-                                    type="text"
-                                    class="input input-sm grow"
-                                    :placeholder="t('config.protocolOptionValue')"
-                                />
-                                <button
-                                    class="btn btn-sm"
-                                    type="button"
-                                    :disabled="
-                                        !newProtocolOptionName.trim() ||
-                                        !newProtocolOptionValue.trim() ||
-                                        newProtocolOptionName.trim() in configStore.playout.output.protocol_options
-                                    "
-                                    @click="addProtocolOption"
-                                >
-                                    {{ t('config.addProtocolOption') }}
-                                </button>
-                            </div>
-                        </fieldset>
-                    </div>
+                        </SettingsField>
+                    </template>
                 </div>
+            </SettingsGroup>
 
-                <fieldset v-if="output === 'hls'" class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.hlsSettings') }}</legend>
-                    <div class="grid gap-3 sm:grid-cols-3">
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.hlsPlaylistName') }}</span>
-                            <input
-                                v-model.trim="configStore.playout.output.hls_playlist_name"
-                                type="text"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.hlsSegmentDuration') }}</span>
-                            <input
-                                v-model.number="configStore.playout.output.hls_segment_duration"
-                                type="number"
-                                min="1"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                        <label class="fieldset">
-                            <span class="fieldset-legend">{{ t('config.hlsListSize') }}</span>
-                            <input
-                                v-model.number="configStore.playout.output.hls_list_size"
-                                type="number"
-                                min="0"
-                                class="input input-sm w-full"
-                            />
-                        </label>
-                    </div>
-                    <p class="fieldset-label items-baseline">{{ t('config.outputParam') }}</p>
-                </fieldset>
+            <SettingsGroup
+                v-if="output === 'hls' || output === 'stream'"
+                :title="t('settings2.output.adv.outputExtra')"
+            >
+                <SettingsField :label="t('config.audioEncoderOptions')" :hint="t('config.audioEncoderOptionsHelp')">
+                    <KeyValueEditor
+                        :key="`audio-${outputId}`"
+                        v-model="configStore.playout.output.audio_options"
+                        :name-placeholder="t('config.audioOptionName')"
+                        :value-placeholder="t('config.audioOptionValue')"
+                        :add-label="t('config.addAudioOption')"
+                    />
+                </SettingsField>
+                <SettingsField :label="t('config.muxerOptions')" :hint="t('config.muxerOptionsHelp')">
+                    <KeyValueEditor
+                        :key="`muxer-${outputId}`"
+                        v-model="configStore.playout.output.muxer_options"
+                        :name-placeholder="t('config.muxerOptionName')"
+                        :value-placeholder="t('config.muxerOptionValue')"
+                        :add-label="t('config.addMuxerOption')"
+                    />
+                </SettingsField>
+                <SettingsField :label="t('config.outputMetadata')" :hint="t('config.outputMetadataHelp')">
+                    <KeyValueEditor
+                        :key="`metadata-${outputId}`"
+                        v-model="configStore.playout.output.metadata_options"
+                        :name-placeholder="t('config.metadataKey')"
+                        :value-placeholder="t('config.metadataValue')"
+                        :add-label="t('config.addMetadata')"
+                    />
+                </SettingsField>
+                <SettingsField
+                    v-if="output === 'stream'"
+                    :label="t('config.protocolOptions')"
+                    :hint="t('config.protocolOptionsHelp')"
+                >
+                    <KeyValueEditor
+                        :key="`protocol-${outputId}`"
+                        v-model="configStore.playout.output.protocol_options"
+                        :trim-values="false"
+                        :name-placeholder="t('config.protocolOptionName')"
+                        :value-placeholder="t('config.protocolOptionValue')"
+                        :add-label="t('config.addProtocolOption')"
+                    />
+                </SettingsField>
+            </SettingsGroup>
 
-                <fieldset v-if="output === 'hls'" class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.hlsVariants') }}</legend>
-                    <p class="fieldset-label items-baseline mb-2">{{ t('config.hlsVariantsHelp') }}</p>
+            <SettingsGroup v-if="output === 'hls'" :title="t('settings2.output.adv.hls')">
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <SettingsField :label="t('config.hlsPlaylistName')">
+                        <input
+                            v-model.trim="configStore.playout.output.hls_playlist_name"
+                            type="text"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('config.hlsSegmentDuration')">
+                        <input
+                            v-model.number="configStore.playout.output.hls_segment_duration"
+                            type="number"
+                            min="1"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('config.hlsListSize')">
+                        <input
+                            v-model.number="configStore.playout.output.hls_list_size"
+                            type="number"
+                            min="0"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                </div>
+                <p class="text-sm opacity-70">{{ t('config.outputParam') }}</p>
 
-                    <div
-                        v-for="(variant, index) in hlsVariants"
-                        :key="index"
-                        class="flex flex-wrap items-center gap-2 mb-2"
-                    >
+                <SettingsField :label="t('config.hlsVariants')" :hint="t('config.hlsVariantsHelp')">
+                    <div v-for="(variant, index) in hlsVariants" :key="index" class="flex flex-wrap items-center gap-2">
                         <input
                             :value="variant.name"
-                            @input="updateHlsVariant(index, 'name', ($event.target as HTMLInputElement).value)"
                             type="text"
-                            placeholder="name"
+                            :placeholder="t('settings2.output.adv.variantName')"
                             class="input input-sm w-24"
+                            @input="updateHlsVariant(index, 'name', eventValue($event))"
                         />
                         <input
                             :value="variant.width"
-                            @input="updateHlsVariant(index, 'width', ($event.target as HTMLInputElement).value)"
                             type="number"
-                            placeholder="width"
-                            class="input input-sm w-20"
+                            :placeholder="t('settings2.output.quality.width')"
+                            class="input input-sm w-24"
+                            @input="updateHlsVariant(index, 'width', eventValue($event))"
                         />
                         <span>x</span>
                         <input
                             :value="variant.height"
-                            @input="updateHlsVariant(index, 'height', ($event.target as HTMLInputElement).value)"
                             type="number"
-                            placeholder="height"
-                            class="input input-sm w-20"
+                            :placeholder="t('settings2.output.quality.height')"
+                            class="input input-sm w-24"
+                            @input="updateHlsVariant(index, 'height', eventValue($event))"
                         />
                         <input
                             :value="variant.videoBitrate"
-                            @input="updateHlsVariant(index, 'videoBitrate', ($event.target as HTMLInputElement).value)"
                             type="text"
-                            placeholder="video bitrate, e.g. 5000k"
-                            class="input input-sm w-32"
+                            :placeholder="t('settings2.output.adv.variantVideoBitrate')"
+                            class="input input-sm w-36"
+                            @input="updateHlsVariant(index, 'videoBitrate', eventValue($event))"
                         />
                         <input
                             :value="variant.audioBitrate"
-                            @input="updateHlsVariant(index, 'audioBitrate', ($event.target as HTMLInputElement).value)"
                             type="text"
-                            placeholder="audio bitrate, e.g. 128k"
-                            class="input input-sm w-32"
+                            :placeholder="t('settings2.output.adv.variantAudioBitrate')"
+                            class="input input-sm w-36"
+                            @input="updateHlsVariant(index, 'audioBitrate', eventValue($event))"
                         />
                         <button type="button" class="btn btn-sm btn-error btn-outline" @click="removeHlsVariant(index)">
                             {{ t('config.remove') }}
                         </button>
                     </div>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline" @click="addHlsVariant">
+                            {{ t('config.addHlsVariant') }}
+                        </button>
+                    </div>
+                </SettingsField>
+            </SettingsGroup>
 
-                    <button type="button" class="btn btn-sm btn-outline mt-1" @click="addHlsVariant">
-                        {{ t('config.addHlsVariant') }}
+            <SettingsGroup :title="t('settings2.output.adv.ingest')" :text="t('config.ingestHelp')">
+                <div
+                    v-for="(listener, index) in configStore.playout.ingest.listeners"
+                    :key="listener.id || `new-${index}`"
+                    class="rounded-box border border-base-300 bg-base-100 p-3 space-y-3"
+                >
+                    <div class="flex items-center justify-between gap-3">
+                        <label class="flex cursor-pointer items-center gap-2">
+                            <input v-model="listener.enabled" type="checkbox" class="checkbox" />
+                            {{ t('settings2.output.adv.listenerEnabled') }}
+                        </label>
+                        <button type="button" class="btn btn-ghost btn-sm" @click="removeLiveListener(index)">
+                            {{ t('config.liveListenerRemove') }}
+                        </button>
+                    </div>
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <SettingsField :label="t('config.liveListenerName')">
+                            <input v-model="listener.name" type="text" class="input input-sm w-full" />
+                        </SettingsField>
+                        <SettingsField :label="t('config.liveListenerBackend')">
+                            <select
+                                v-model="listener.backend"
+                                class="select select-sm w-full"
+                                @change="changeLiveBackend(index)"
+                            >
+                                <option value="rtmp">RTMP</option>
+                                <option value="srt">SRT</option>
+                            </select>
+                        </SettingsField>
+                        <SettingsField :label="t('config.liveListenerUrl')">
+                            <input v-model="listener.identifier" type="text" class="input input-sm w-full" />
+                        </SettingsField>
+                        <SettingsField :label="t('config.liveListenerPriority')">
+                            <input
+                                v-model.number="listener.priority"
+                                type="number"
+                                min="0"
+                                max="100"
+                                class="input input-sm w-full"
+                            />
+                        </SettingsField>
+                    </div>
+                    <details
+                        class="rounded-box border border-base-300 p-3"
+                        :open="
+                            Object.keys(listener.options).length !== 0 ||
+                            Object.keys(listener.demuxer_options).length !== 0
+                        "
+                    >
+                        <summary class="cursor-pointer font-semibold">{{ t('player.advanced') }}</summary>
+                        <div class="mt-3 space-y-4">
+                            <SettingsField
+                                :label="t('config.liveListenerOptions')"
+                                :hint="t('config.liveListenerOptionsHelp')"
+                            >
+                                <KeyValueEditor
+                                    v-model="listener.options"
+                                    :trim-values="false"
+                                    :name-placeholder="t('config.protocolOptionName')"
+                                    :value-placeholder="t('config.protocolOptionValue')"
+                                    :add-label="t('config.addProtocolOption')"
+                                />
+                            </SettingsField>
+                            <SettingsField
+                                :label="t('config.liveDemuxerOptions')"
+                                :hint="t('config.liveDemuxerOptionsHelp')"
+                            >
+                                <KeyValueEditor
+                                    v-model="listener.demuxer_options"
+                                    :trim-values="false"
+                                    :name-placeholder="t('config.protocolOptionName')"
+                                    :value-placeholder="t('config.protocolOptionValue')"
+                                    :add-label="t('config.addDemuxerOption')"
+                                />
+                            </SettingsField>
+                        </div>
+                    </details>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-sm btn-outline" @click="addLiveListener">
+                        {{ t('config.liveListenerAdd') }}
                     </button>
-                </fieldset>
-            </div>
-            <div class="mt-5 mb-10">
-                <button class="btn btn-primary" type="submit">{{ t('config.save') }}</button>
-            </div>
-        </form>
-    </div>
+                </div>
+            </SettingsGroup>
 
-    <GenericModal
-        :title="t('config.restartTile')"
-        :text="t('config.restartText')"
-        :show="configStore.showRestartModal"
-        :modal-action="configStore.restart"
-    />
+            <SettingsGroup :title="t('settings2.output.adv.playlist')" :text="t('config.playlistHelp')">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <SettingsField :label="t('settings2.output.adv.dayStart')" :hint="t('config.playlistDayStart')">
+                        <input
+                            v-model="configStore.playout.playlist.day_start"
+                            type="text"
+                            name="day_start"
+                            class="input input-sm w-full"
+                            pattern="(([01]?[0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9]|now|none)"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.output.adv.length')" :hint="t('config.playlistLength')">
+                        <input
+                            v-model="configStore.playout.playlist.length"
+                            type="text"
+                            name="length"
+                            class="input input-sm w-full"
+                            pattern="([01]?[0-9]|2[0-4]):[0-5][0-9]:[0-5][0-9]"
+                        />
+                    </SettingsField>
+                </div>
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input v-model="configStore.playout.playlist.infinit" type="checkbox" class="checkbox" />
+                    {{ t('settings2.output.adv.infinit') }}
+                </label>
+                <p class="text-sm opacity-70">{{ t('config.playlistInfinit') }}</p>
+            </SettingsGroup>
+
+            <SettingsGroup :title="t('settings2.output.adv.storage')" :text="t('config.storageHelp')">
+                <SettingsField :label="t('settings2.output.adv.extensions')" :hint="t('config.storageExtension')">
+                    <input v-model="extensions" type="text" name="extensions" class="input input-sm w-full" />
+                </SettingsField>
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input v-model="configStore.playout.storage.shuffle" type="checkbox" class="checkbox" />
+                    {{ t('settings2.output.adv.shuffle') }}
+                </label>
+                <p class="text-sm opacity-70">{{ t('config.storageShuffle') }}</p>
+                <p class="text-sm opacity-70">{{ t('config.storageFiller') }}</p>
+            </SettingsGroup>
+
+            <SettingsGroup :title="t('settings2.output.adv.subtitles')">
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input v-model="configStore.playout.processing.vtt_enable" type="checkbox" class="checkbox" />
+                    {{ t('settings2.output.adv.vttEnable') }}
+                </label>
+                <p class="text-sm opacity-70">{{ t('config.processingVTTEnable') }}</p>
+                <SettingsField :label="t('settings2.output.adv.vttDummy')" :hint="t('config.processingVTTDummy')">
+                    <input
+                        v-model="configStore.playout.processing.vtt_dummy"
+                        type="text"
+                        name="vtt_dummy"
+                        class="input input-sm w-full"
+                    />
+                </SettingsField>
+                <div v-if="configStore.playout.processing.vtt_enable" class="grid gap-3 sm:grid-cols-3">
+                    <SettingsField :label="t('config.hlsSubtitleName')">
+                        <input
+                            v-model.trim="configStore.playout.processing.vtt_name"
+                            type="text"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('config.hlsSubtitleLanguage')">
+                        <input
+                            v-model.trim="configStore.playout.processing.vtt_language"
+                            type="text"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('config.hlsSubtitleDefault')">
+                        <input v-model="configStore.playout.processing.vtt_default" type="checkbox" class="toggle" />
+                    </SettingsField>
+                </div>
+            </SettingsGroup>
+
+            <SettingsGroup :title="t('settings2.output.adv.task')" :text="t('config.taskHelp')">
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input v-model="configStore.playout.task.enable" type="checkbox" class="checkbox" />
+                    {{ t('settings2.output.adv.taskEnable') }}
+                </label>
+                <SettingsField :label="t('settings2.output.adv.taskPath')" :hint="t('config.taskPath')">
+                    <input
+                        v-model="configStore.playout.task.path"
+                        type="text"
+                        name="task_path"
+                        class="input input-sm w-full"
+                    />
+                </SettingsField>
+            </SettingsGroup>
+
+            <SettingsGroup :title="t('settings2.output.adv.log')" :text="t('config.logHelp')">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <SettingsField :label="t('settings2.output.adv.ffmpegLevel')">
+                        <select v-model="configStore.playout.logging.ffmpeg_level" class="select select-sm w-full">
+                            <option v-for="level in logLevels" :key="level" :value="level">{{ level }}</option>
+                        </select>
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.output.adv.ingestLevel')">
+                        <select v-model="configStore.playout.logging.ingest_level" class="select select-sm w-full">
+                            <option v-for="level in logLevels" :key="level" :value="level">{{ level }}</option>
+                        </select>
+                    </SettingsField>
+                </div>
+                <label class="flex cursor-pointer items-center gap-2">
+                    <input v-model="configStore.playout.logging.detect_silence" type="checkbox" class="checkbox" />
+                    {{ t('settings2.output.adv.detectSilence') }}
+                </label>
+                <p class="text-sm opacity-70">{{ t('config.logDetect') }}</p>
+                <SettingsField :label="t('settings2.output.adv.ignoreLines')" :hint="t('config.logIgnore')">
+                    <input v-model="formatIgnoreLines" type="text" class="input input-sm w-full truncate" />
+                </SettingsField>
+            </SettingsGroup>
+
+            <SettingsGroup :title="t('settings2.output.adv.general')" :text="t('config.generalHelp')">
+                <SettingsField :label="t('settings2.output.adv.stopThreshold')" :hint="t('config.stopThreshold')">
+                    <input
+                        v-model="configStore.playout.general.stop_threshold"
+                        type="number"
+                        min="3"
+                        class="input input-sm w-full max-w-36"
+                    />
+                </SettingsField>
+            </SettingsGroup>
+
+            <SettingsGroup
+                v-if="configStore.playout.mail.show"
+                :title="t('settings2.output.adv.mail')"
+                :text="t('config.mailHelp')"
+            >
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <SettingsField :label="t('settings2.output.adv.mailSubject')">
+                        <input
+                            v-model="configStore.playout.mail.subject"
+                            type="text"
+                            name="subject"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.output.adv.mailRecipient')">
+                        <input
+                            v-model="configStore.playout.mail.recipient"
+                            type="text"
+                            name="recipient"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.output.adv.mailLevel')">
+                        <select v-model="configStore.playout.mail.mail_level" class="select select-sm w-full">
+                            <option v-for="level in logLevels" :key="level" :value="level">{{ level }}</option>
+                        </select>
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.output.adv.mailInterval')" :hint="t('config.mailInterval')">
+                        <input
+                            v-model="configStore.playout.mail.interval"
+                            type="number"
+                            min="30"
+                            step="10"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                </div>
+            </SettingsGroup>
+
+            <SettingsGroup
+                v-if="configStore.playout.notification.show"
+                :title="t('settings2.output.adv.notification')"
+                :text="t('config.notificationHelp')"
+            >
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <SettingsField :label="t('config.notificationTopic')">
+                        <input
+                            v-model="configStore.playout.notification.topic"
+                            type="text"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('config.notificationLevel')">
+                        <select v-model="configStore.playout.notification.level" class="select select-sm w-full">
+                            <option v-for="level in notificationLevels" :key="level" :value="level">{{ level }}</option>
+                        </select>
+                    </SettingsField>
+                    <SettingsField :label="t('config.notificationTags')">
+                        <input
+                            v-model="configStore.playout.notification.tags"
+                            type="text"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                </div>
+            </SettingsGroup>
+        </AdvancedBlock>
+
+        <p class="flex items-start gap-2 text-sm opacity-70">
+            <i class="bi bi-info-circle mt-0.5" />
+            {{ t('settings2.output.restartNote') }}
+        </p>
+        <SaveBar :dirty="dirty" :saving="saving" @discard="showDiscardModal = true" />
+    </form>
+
+    <DiscardModal :show="showDiscardModal" @confirm="discardChanges" @cancel="showDiscardModal = false" />
+    <RestartModal />
 </template>

@@ -1,10 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { cloneDeep } from 'es-toolkit/object'
 
-import GenericModal from '@/components/utils/GenericModal.vue'
+import AdvancedBlock from '@/components/ui/AdvancedBlock.vue'
+import SaveBar from '@/components/ui/SaveBar.vue'
+import DiscardModal from '@/components/config/DiscardModal.vue'
+import KeyValueEditor from '@/components/config/KeyValueEditor.vue'
+import RestartModal from '@/components/config/RestartModal.vue'
+import SettingsCard from '@/components/config/SettingsCard.vue'
+import SettingsField from '@/components/config/SettingsField.vue'
+import SettingsGroup from '@/components/config/SettingsGroup.vue'
 
 import { authFetch } from '@/composables/authFetch'
+import { usePlayoutDirty } from '@/composables/settingsHelpers'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
@@ -13,6 +22,10 @@ const { t } = useI18n()
 const authStore = useAuth()
 const configStore = useConfig()
 const indexStore = useIndex()
+const dirty = usePlayoutDirty()
+
+const saving = ref(false)
+const showDiscardModal = ref(false)
 
 const activeOutput = computed(() => configStore.outputs.find((output) => output.id === configStore.playout.output.id))
 
@@ -33,8 +46,6 @@ const copyOutputs = computed(() => {
 
 const videoCodecs = computed(() => configStore.outputCodecs.recording.video)
 const audioCodecs = computed(() => configStore.outputCodecs.recording.audio)
-const newAudioOptionName = ref('')
-const newAudioOptionValue = ref('')
 const videoSettings = computed(
     () => videoCodecs.value.find((codec) => codec.name === configStore.playout.recording.video_codec)?.settings ?? [],
 )
@@ -77,48 +88,22 @@ function setVideoOption(key: string, value: string | number) {
     }
 }
 
-function setAudioOption(key: string, value: string | number) {
-    configStore.playout.recording.audio_options = {
-        ...configStore.playout.recording.audio_options,
-        [key]: String(value),
-    }
-}
-
-function addAudioOption() {
-    const options = configStore.playout.recording.audio_options
-    const key = newAudioOptionName.value.trim()
-    const value = newAudioOptionValue.value.trim()
-    if (!key || !value || key in options) return
-    configStore.playout.recording.audio_options = { ...options, [key]: value }
-    newAudioOptionName.value = ''
-    newAudioOptionValue.value = ''
-}
-
-function renameAudioOption(previousKey: string, event: Event) {
-    const input = event.target as HTMLInputElement
-    const key = input.value.trim()
-    const options = { ...configStore.playout.recording.audio_options }
-    if (!key || (key !== previousKey && key in options)) {
-        input.value = previousKey
-        return
-    }
-    const value = options[previousKey]
-    delete options[previousKey]
-    options[key] = value
-    configStore.playout.recording.audio_options = options
-}
-
-function removeAudioOption(key: string) {
-    const options = { ...configStore.playout.recording.audio_options }
-    delete options[key]
-    configStore.playout.recording.audio_options = options
-}
-
 function eventValue(event: Event) {
     return (event.target as HTMLInputElement).value
 }
 
+function discardChanges() {
+    configStore.playout = cloneDeep(configStore.playoutSaved)
+    showDiscardModal.value = false
+}
+
 async function saveRecording() {
+    if (saving.value) {
+        return
+    }
+
+    saving.value = true
+
     try {
         const result = await configStore.setPlayoutConfig(configStore.playout)
 
@@ -133,239 +118,221 @@ async function saveRecording() {
         }
 
         await configStore.getPlayoutConfig()
-        indexStore.msgAlert('success', t('config.recordingUpdated'), 2)
+        indexStore.msgAlert('success', t('settings2.recording.saved'), 2)
     } catch (error) {
-        indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 3)
+        const detail = error instanceof Error ? error.message : String(error)
+        indexStore.msgAlert('error', `${t('settings2.recording.saveFailed')} ${detail}`, 4)
+    } finally {
+        saving.value = false
     }
 }
 </script>
 
 <template>
-    <div class="max-w-300 xs:pe-8">
-        <h2 class="pt-3 text-3xl">{{ t('config.recording') }}</h2>
-        <form v-if="configStore.playout.recording" class="mt-10 max-w-3xl" @submit.prevent="saveRecording">
-            <fieldset class="fieldset rounded-box border border-base-300 p-4">
-                <label class="fieldset-label text-base-content">
-                    <input v-model="configStore.playout.recording.enable" type="checkbox" class="checkbox" />
-                    {{ t('config.recordingEnable') }}
-                </label>
-            </fieldset>
+    <form v-if="configStore.playout.recording" class="space-y-5" @submit.prevent="saveRecording">
+        <SettingsCard
+            icon="bi-record-circle"
+            :title="t('settings2.recording.title')"
+            :text="t('settings2.recording.text')"
+        >
+            <label class="flex cursor-pointer items-center gap-3">
+                <input v-model="configStore.playout.recording.enable" type="checkbox" class="toggle toggle-primary" />
+                <span class="font-semibold">{{ t('settings2.recording.enable') }}</span>
+                <span class="badge" :class="configStore.playout.recording.enable ? 'badge-success' : 'badge-ghost'">
+                    {{ configStore.playout.recording.enable ? t('settings2.on') : t('settings2.off') }}
+                </span>
+            </label>
+            <p class="text-sm opacity-70">{{ t('settings2.recording.enableHelp') }}</p>
 
-            <div class="mt-5 grid gap-4 sm:grid-cols-2">
-                <label class="fieldset">
-                    <span class="fieldset-legend">{{ t('config.recordingSource') }}</span>
-                    <select
-                        v-model="configStore.playout.recording.source"
-                        class="select select-sm w-full"
-                        @change="setRecordingSource"
-                    >
-                        <option value="stream" :disabled="configStore.playout.output.mode !== 'stream'">
-                            {{ t('config.recordingCurrentStream') }}
-                        </option>
-                        <option value="hls_variant" :disabled="configStore.playout.output.mode !== 'hls'">
-                            {{ t('config.recordingHlsVariant') }}
-                        </option>
-                        <option value="encode">{{ t('config.recordingEncode') }}</option>
-                    </select>
-                </label>
-                <label v-if="configStore.playout.recording.source !== 'encode'" class="fieldset">
-                    <span class="fieldset-legend">{{ t('config.recordingSourceOutput') }}</span>
-                    <select
-                        v-model.number="configStore.playout.recording.source_output_id"
-                        class="select select-sm w-full"
-                    >
-                        <option :value="null" disabled>{{ t('config.recordingSelectOutput') }}</option>
-                        <option v-for="output in copyOutputs" :key="output.id" :value="output.id">
-                            {{ output.name }}
-                        </option>
-                    </select>
-                </label>
-                <label v-if="configStore.playout.recording.source === 'hls_variant'" class="fieldset">
-                    <span class="fieldset-legend">{{ t('config.recordingHlsVariant') }}</span>
-                    <select v-model="configStore.playout.recording.variant" class="select select-sm w-full">
-                        <option v-for="variant in hlsVariants" :key="variant" :value="variant">{{ variant }}</option>
-                    </select>
-                </label>
-                <template v-if="configStore.playout.recording.source === 'encode'">
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.videoCodec') }}</span>
-                        <select
-                            v-model="configStore.playout.recording.video_codec"
-                            class="select select-sm w-full"
-                            @change="setRecordingVideoCodec"
-                        >
-                            <option v-for="codec in videoCodecs" :key="codec.name" :value="codec.name">
-                                {{ codec.display_name }}
-                            </option>
-                        </select>
-                    </label>
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.audioCodec') }}</span>
-                        <select
-                            v-model="configStore.playout.recording.audio_codec"
-                            class="select select-sm w-full"
-                            @change="setRecordingAudioCodec"
-                        >
-                            <option v-for="codec in audioCodecs" :key="codec.name" :value="codec.name">
-                                {{ codec.display_name }}
-                            </option>
-                        </select>
-                    </label>
-                    <template v-for="setting in videoSettings" :key="setting.key">
-                        <label v-if="settingIsVisible(setting)" class="fieldset">
-                            <span class="fieldset-legend">{{ setting.label }}</span>
-                            <select
-                                v-if="setting.kind === 'select'"
-                                :value="configStore.playout.recording.video_options[setting.key]"
-                                class="select select-sm w-full"
-                                @change="setVideoOption(setting.key, eventValue($event))"
-                            >
-                                <option v-for="choice in setting.choices" :key="choice.value" :value="choice.value">
-                                    {{ choice.label }}
-                                </option>
-                            </select>
-                            <input
-                                v-else
-                                :value="configStore.playout.recording.video_options[setting.key]"
-                                type="number"
-                                :min="setting.minimum ?? undefined"
-                                :max="setting.maximum ?? undefined"
-                                step="1"
-                                class="input input-sm w-full"
-                                @input="setVideoOption(setting.key, eventValue($event))"
-                            />
-                        </label>
-                    </template>
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.recordingWidth') }}</span>
-                        <input
-                            v-model.number="configStore.playout.recording.width"
-                            type="number"
-                            min="0"
-                            step="2"
-                            class="input input-sm w-full"
-                        />
-                    </label>
-                    <label class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.recordingHeight') }}</span>
-                        <input
-                            v-model.number="configStore.playout.recording.height"
-                            type="number"
-                            min="0"
-                            step="2"
-                            class="input input-sm w-full"
-                        />
-                    </label>
-                    <label v-if="audioUsesBitrate" class="fieldset">
-                        <span class="fieldset-legend">{{ t('config.audioBitrate') }}</span>
-                        <input
-                            v-model.number="configStore.playout.recording.audio_bitrate"
-                            type="number"
-                            min="1"
-                            step="1"
-                            class="input input-sm w-full"
-                        />
-                    </label>
-                    <fieldset class="fieldset sm:col-span-2">
-                        <legend class="fieldset-legend">{{ t('config.audioEncoderOptions') }}</legend>
-                        <p class="fieldset-label items-baseline mb-2">{{ t('config.audioEncoderOptionsHelp') }}</p>
-                        <div
-                            v-for="[key, value] in Object.entries(configStore.playout.recording.audio_options)"
-                            :key="key"
-                            class="flex flex-wrap items-center gap-2 mb-2"
-                        >
-                            <input
-                                :value="key"
-                                type="text"
-                                class="input input-sm w-48"
-                                @change="renameAudioOption(key, $event)"
-                            />
-                            <input
-                                :value="value"
-                                type="text"
-                                class="input input-sm grow"
-                                @input="setAudioOption(key, eventValue($event))"
-                            />
-                            <button class="btn btn-sm btn-ghost" type="button" @click="removeAudioOption(key)">
-                                {{ t('config.remove') }}
-                            </button>
-                        </div>
-                        <div class="flex flex-wrap items-center gap-2">
-                            <input
-                                v-model="newAudioOptionName"
-                                type="text"
-                                class="input input-sm w-48"
-                                :placeholder="t('config.audioOptionName')"
-                            />
-                            <input
-                                v-model="newAudioOptionValue"
-                                type="text"
-                                class="input input-sm grow"
-                                :placeholder="t('config.audioOptionValue')"
-                            />
-                            <button
-                                class="btn btn-sm"
-                                type="button"
-                                :disabled="
-                                    !newAudioOptionName.trim() ||
-                                    !newAudioOptionValue.trim() ||
-                                    newAudioOptionName.trim() in configStore.playout.recording.audio_options
-                                "
-                                @click="addAudioOption"
-                            >
-                                {{ t('config.addAudioOption') }}
-                            </button>
-                        </div>
-                    </fieldset>
-                </template>
-                <label class="fieldset sm:col-span-2">
-                    <span class="fieldset-legend">{{ t('config.recordingPath') }}</span>
+            <div class="grid gap-4 sm:grid-cols-2">
+                <SettingsField
+                    class="sm:col-span-2"
+                    :label="t('settings2.recording.where')"
+                    :help="t('settings2.recording.whereHelp')"
+                >
                     <input
                         v-model.trim="configStore.playout.recording.path"
                         type="text"
-                        class="input input-sm w-full"
+                        class="input w-full"
+                        :placeholder="t('settings2.recording.wherePlaceholder')"
                     />
-                </label>
-                <label class="fieldset">
-                    <span class="fieldset-legend">{{ t('config.recordingSegmentDuration') }}</span>
-                    <input
-                        v-model.number="configStore.playout.recording.segment_duration"
-                        type="number"
-                        min="30"
-                        max="3600"
-                        step="1"
-                        class="input input-sm w-full"
-                    />
-                </label>
-                <label class="fieldset">
-                    <span class="fieldset-legend">{{ t('config.recordingRetention') }}</span>
+                </SettingsField>
+                <SettingsField
+                    :label="t('settings2.recording.keep')"
+                    :help="t('settings2.recording.keepHelp')"
+                    :hint="t('settings2.recording.keepHint')"
+                >
                     <input
                         v-model.number="configStore.playout.recording.retention_days"
                         type="number"
                         min="0"
                         step="1"
-                        class="input input-sm w-full"
+                        class="input w-full"
                     />
-                </label>
-                <label class="fieldset">
-                    <span class="fieldset-legend">{{ t('config.recordingMinimumFreeSpace') }}</span>
-                    <input
-                        v-model.number="configStore.playout.recording.minimum_free_space_gb"
-                        type="number"
-                        min="0"
-                        step="1"
-                        class="input input-sm w-full"
-                    />
-                </label>
+                </SettingsField>
             </div>
-            <button class="btn btn-primary mt-6" type="submit">{{ t('config.save') }}</button>
-        </form>
-    </div>
+        </SettingsCard>
 
-    <GenericModal
-        :title="t('config.restartTile')"
-        :text="t('config.restartText')"
-        :show="configStore.showRestartModal"
-        :modal-action="configStore.restart"
-    />
+        <AdvancedBlock>
+            <SettingsGroup :title="t('settings2.recording.advancedSource')">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <SettingsField :label="t('config.recordingSource')">
+                        <select
+                            v-model="configStore.playout.recording.source"
+                            class="select select-sm w-full"
+                            @change="setRecordingSource"
+                        >
+                            <option value="stream" :disabled="configStore.playout.output.mode !== 'stream'">
+                                {{ t('config.recordingCurrentStream') }}
+                            </option>
+                            <option value="hls_variant" :disabled="configStore.playout.output.mode !== 'hls'">
+                                {{ t('config.recordingHlsVariant') }}
+                            </option>
+                            <option value="encode">{{ t('config.recordingEncode') }}</option>
+                        </select>
+                    </SettingsField>
+                    <SettingsField
+                        v-if="configStore.playout.recording.source !== 'encode'"
+                        :label="t('settings2.recording.sourceOutput')"
+                    >
+                        <select
+                            v-model.number="configStore.playout.recording.source_output_id"
+                            class="select select-sm w-full"
+                        >
+                            <option :value="null" disabled>{{ t('config.recordingSelectOutput') }}</option>
+                            <option v-for="output in copyOutputs" :key="output.id" :value="output.id">
+                                {{ output.name }}
+                            </option>
+                        </select>
+                    </SettingsField>
+                    <SettingsField
+                        v-if="configStore.playout.recording.source === 'hls_variant'"
+                        :label="t('settings2.recording.hlsVariant')"
+                    >
+                        <select v-model="configStore.playout.recording.variant" class="select select-sm w-full">
+                            <option v-for="variant in hlsVariants" :key="variant" :value="variant">
+                                {{ variant }}
+                            </option>
+                        </select>
+                    </SettingsField>
+                    <template v-if="configStore.playout.recording.source === 'encode'">
+                        <SettingsField :label="t('config.videoCodec')">
+                            <select
+                                v-model="configStore.playout.recording.video_codec"
+                                class="select select-sm w-full"
+                                @change="setRecordingVideoCodec"
+                            >
+                                <option v-for="codec in videoCodecs" :key="codec.name" :value="codec.name">
+                                    {{ codec.display_name }}
+                                </option>
+                            </select>
+                        </SettingsField>
+                        <SettingsField :label="t('config.audioCodec')">
+                            <select
+                                v-model="configStore.playout.recording.audio_codec"
+                                class="select select-sm w-full"
+                                @change="setRecordingAudioCodec"
+                            >
+                                <option v-for="codec in audioCodecs" :key="codec.name" :value="codec.name">
+                                    {{ codec.display_name }}
+                                </option>
+                            </select>
+                        </SettingsField>
+                        <template v-for="setting in videoSettings" :key="setting.key">
+                            <SettingsField v-if="settingIsVisible(setting)" :label="setting.label">
+                                <select
+                                    v-if="setting.kind === 'select'"
+                                    :value="configStore.playout.recording.video_options[setting.key]"
+                                    class="select select-sm w-full"
+                                    @change="setVideoOption(setting.key, eventValue($event))"
+                                >
+                                    <option v-for="choice in setting.choices" :key="choice.value" :value="choice.value">
+                                        {{ choice.label }}
+                                    </option>
+                                </select>
+                                <input
+                                    v-else
+                                    :value="configStore.playout.recording.video_options[setting.key]"
+                                    type="number"
+                                    :min="setting.minimum ?? undefined"
+                                    :max="setting.maximum ?? undefined"
+                                    step="1"
+                                    class="input input-sm w-full"
+                                    @input="setVideoOption(setting.key, eventValue($event))"
+                                />
+                            </SettingsField>
+                        </template>
+                        <SettingsField :label="t('settings2.recording.width')">
+                            <input
+                                v-model.number="configStore.playout.recording.width"
+                                type="number"
+                                min="0"
+                                step="2"
+                                class="input input-sm w-full"
+                            />
+                        </SettingsField>
+                        <SettingsField :label="t('settings2.recording.height')">
+                            <input
+                                v-model.number="configStore.playout.recording.height"
+                                type="number"
+                                min="0"
+                                step="2"
+                                class="input input-sm w-full"
+                            />
+                        </SettingsField>
+                        <SettingsField v-if="audioUsesBitrate" :label="t('config.audioBitrate')">
+                            <input
+                                v-model.number="configStore.playout.recording.audio_bitrate"
+                                type="number"
+                                min="1"
+                                step="1"
+                                class="input input-sm w-full"
+                            />
+                        </SettingsField>
+                    </template>
+                </div>
+                <SettingsField
+                    v-if="configStore.playout.recording.source === 'encode'"
+                    :label="t('config.audioEncoderOptions')"
+                    :hint="t('config.audioEncoderOptionsHelp')"
+                >
+                    <KeyValueEditor
+                        v-model="configStore.playout.recording.audio_options"
+                        :name-placeholder="t('config.audioOptionName')"
+                        :value-placeholder="t('config.audioOptionValue')"
+                        :add-label="t('config.addAudioOption')"
+                    />
+                </SettingsField>
+            </SettingsGroup>
+
+            <SettingsGroup :title="t('settings2.recording.advancedFiles')">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <SettingsField :label="t('settings2.recording.segment')">
+                        <input
+                            v-model.number="configStore.playout.recording.segment_duration"
+                            type="number"
+                            min="30"
+                            max="3600"
+                            step="1"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                    <SettingsField :label="t('settings2.recording.freeSpace')">
+                        <input
+                            v-model.number="configStore.playout.recording.minimum_free_space_gb"
+                            type="number"
+                            min="0"
+                            step="1"
+                            class="input input-sm w-full"
+                        />
+                    </SettingsField>
+                </div>
+            </SettingsGroup>
+        </AdvancedBlock>
+
+        <SaveBar :dirty="dirty" :saving="saving" @discard="showDiscardModal = true" />
+    </form>
+
+    <DiscardModal :show="showDiscardModal" @confirm="discardChanges" @cancel="showDiscardModal = false" />
+    <RestartModal />
 </template>
