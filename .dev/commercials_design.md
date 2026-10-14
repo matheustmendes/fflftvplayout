@@ -81,6 +81,12 @@ Regra de contagem: só `played` com duração real ≥ 95% da prevista conta com
 engine tocou filler) **não** contam. Fusos: horários guardados em UTC e
 exibidos no fuso do canal.
 
+**Retenção:** 60 dias (decisão do cliente), com uma exceção proposta: os
+registros de uma campanha são mantidos até o **fim da campanha + 60 dias**,
+para que o relatório final de uma campanha longa não perca o começo. Uma
+tarefa periódica apaga o que passou do prazo, e o relatório avisa quando o
+período pedido ultrapassa o que ainda está guardado.
+
 ## 4. Compilador de intervalos
 
 Módulo de domínio em `backend/app/src/utils/` (por exemplo
@@ -184,7 +190,7 @@ Proposta:
    teste).
 2. Ao terminar o upload, criar o spot com `status = processing` e enfileirar a
    **conversão**:
-   - saída mp4, H.264, AAC estéreo, resolução e fps do canal;
+   - saída mp4, H.264, AAC estéreo, **1080p a 30 fps** (formato do canal);
    - áudio mono múltiplo: mapear as duas primeiras trilhas para estéreo, ou
      misturar todas; **decidir depois de inspecionar amostras reais**;
    - normalização de volume com alvo configurável (a confirmar com a
@@ -223,9 +229,11 @@ Usar os helpers existentes de autenticação, papéis e acesso a arquivos
 
 ## 8. Relatórios (CSV e PDF)
 
-Enviados aos anunciantes. Conteúdo:
+Enviados aos anunciantes pelo operador, que **baixa o arquivo e envia por
+conta própria** (o sistema não envia e-mail). Conteúdo:
 
-- Cabeçalho: emissora, anunciante, campanha, período, data de emissão.
+- Cabeçalho: logotipo e dados da emissora (configuráveis), anunciante,
+  campanha, período, data de emissão.
 - Resumo: previstas × veiculadas × não veiculadas, por dia.
 - Tabela: data, hora real, spot, duração, resultado (e motivo quando não
   veiculado, inclusive "ao vivo no horário").
@@ -234,8 +242,8 @@ Enviados aos anunciantes. Conteúdo:
 CSV: gerado no servidor, UTF-8 com BOM e separador `;` para abrir direto no
 Excel em pt-BR. PDF: decidir a biblioteca na implementação (avaliar crates de
 geração de PDF); começar com CSV e uma página de relatório imprimível, e
-acrescentar o PDF em seguida. Guardar os registros por um período mínimo
-configurável (a definir com o cliente).
+acrescentar o PDF em seguida. O logotipo e os dados da emissora ficam em uma
+configuração do canal.
 
 ## 9. Interface (à prova de leigo)
 
@@ -297,12 +305,10 @@ Dependências com o resto do roadmap:
 
 ## 12. Questões em aberto
 
-1. Quantos intervalos por dia e de que duração, em média? Quantos spots por
-   intervalo? (dimensiona a validação e o rodízio)
-2. Alvo de volume dos comerciais (e dos programas): qual norma a emissora
-   segue?
-3. Resolução e fps do canal (define a conversão dos spots e a banda da VPS).
-4. O PDF leva logotipo e dados da emissora? Quanto tempo guardar os
-   registros?
-5. Os anunciantes recebem o relatório por e-mail enviado pelo sistema, ou o
-   operador baixa e envia?
+1. Retenção: confirmar a exceção "campanha até o fim + 60 dias" (seção 3.1).
+2. Alvo de volume (loudness) dos comerciais e dos programas: qual norma a
+   emissora segue?
+3. Dados da emissora e arquivo do logotipo para o PDF.
+
+Respondidas: 1080p30 a 3000 kbps; quantidade de intervalos depende da demanda
+(tudo configurável, sem valor fixo); o operador baixa e envia o relatório.

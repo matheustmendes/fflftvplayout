@@ -145,6 +145,10 @@ horário e o EPG continuam valendo, e o engine não muda.
 | Campanhas | Limite de frequência por dia e preferência de posição (primeiro/último) no intervalo | Campos `max_per_day` e `position` na campanha. |
 | Relatórios | Logs e relatórios de campanhas e anúncios, **enviados aos anunciantes em PDF e CSV** | Tabela de veiculação real (as-run), relatório por campanha, anunciante e período, com exportação em CSV e PDF. |
 | Destinos | Estimativa de **12 destinos puxando ao mesmo tempo** | Dimensionamento da VPS (seção 8). |
+| Qualidade do canal | **1080p, 30 fps, 3000 kbps** de vídeo | Spots convertidos para 1080p30; banda calculada na seção 8. |
+| Volume de intervalos | Varia conforme a demanda; não dá para fixar | O sistema não pode assumir quantidade fixa; tudo é configurável. |
+| Retenção de registros | **60 dias** | Ver alerta na seção 9. |
+| Relatório | PDF com logotipo e dados da emissora; o operador **baixa e envia** | Não há envio de e-mail pelo sistema. |
 | Tolerância fora do ar | 1 min 30 s | Teto de reinício do supervisor e alerta (fase 1.2). |
 | Interface | À prova de leigo | Fase 3. |
 
@@ -199,36 +203,43 @@ MPEG/TS), então um `.mxf` é rejeitado hoje.
 
 ## 8. Dimensionamento da VPS (estimativa)
 
-O relay não recodifica: a banda de saída é **destinos × bitrate**. O bitrate
-real ainda não foi definido; a tabela mostra cenários para 12 destinos.
+O relay não recodifica: a banda de saída é **destinos × bitrate**. Com 12
+destinos, 1080p30 a 3000 kbps de vídeo e cerca de 128 kbps de áudio (valor
+assumido), cada destino consome ~3,1 Mbps.
 
-| Qualidade (exemplo) | Bitrate por destino | Saída total | Dados por hora | Por dia | Por mês (30 dias) |
-|---|---|---|---|---|---|
-| 720p | 3 Mbps | 36 Mbps | 16,2 GB | 389 GB | 11,7 TB |
-| 1080p | 5 Mbps | 60 Mbps | 27 GB | 648 GB | 19,4 TB |
-| 1080p alta | 8 Mbps | 96 Mbps | 43,2 GB | 1,04 TB | 31,1 TB |
+| Item | Valor |
+|---|---|
+| Saída total (12 destinos) | ~37,5 Mbps |
+| Dados por hora | ~16,9 GB |
+| Dados por dia | ~405 GB |
+| Dados por mês (30 dias) | ~12,2 TB (cerca de 13 TB com a sobrecarga do protocolo) |
+
+Para comparação, cenários de maior qualidade (por destino): 5 Mbps somam
+60 Mbps e 19,4 TB/mês; 8 Mbps somam 96 Mbps e 31,1 TB/mês.
 
 Recomendações:
 
-- **Banda:** porta de 1 Gbps, ou no mínimo o dobro da saída total do cenário
-  (folga para picos e novos destinos).
+- **Banda:** porta de 1 Gbps, ou no mínimo o dobro da saída total (folga para
+  picos e novos destinos). Se a quantidade de destinos crescer, a banda cresce
+  linearmente.
 - **Franquia de tráfego:** é o ponto que mais surpreende em VPS. Muitos planos
-  limitam o tráfego mensal a algo bem abaixo de 20 TB. Escolher plano com
-  tráfego **ilimitado** ou franquia compatível com a tabela, e conferir a regra
-  de limitação depois da franquia.
+  limitam o tráfego mensal a valores abaixo de 12 TB. Escolher plano com
+  tráfego **ilimitado** ou franquia de pelo menos ~15 TB, e conferir a regra
+  aplicada depois da franquia.
 - **CPU e RAM:** o README do projeto recomenda no mínimo 4 threads dedicadas e
   3 GB de RAM para 720p; para 1080p reservar mais. Planejar 4 a 6 vCPUs
   **dedicadas** (não compartilhadas) e 8 GB de RAM, já contando relay e
-  conversão de spots.
+  conversão de spots. Validar medindo o uso real na fase 0.
 - **Disco:** depende do tamanho da biblioteca de mídia; segmentos HLS e logs
   são pequenos.
 - **Contingência:** segundo servidor, a decidir com o cliente.
 
 ## 9. Questões em aberto
 
-1. Resolução, fps e bitrate de saída do canal.
-2. Quantos intervalos por dia, de que duração e com quantos spots?
-3. Alvo de volume (norma seguida pela emissora).
-4. PDF com logotipo e dados da emissora? Por quanto tempo guardar os
-   registros?
-5. O relatório é enviado pelo sistema por e-mail ou o operador baixa e envia?
+1. **Retenção de 60 dias × campanhas longas.** Uma campanha de 90 dias teria,
+   no fim, só os últimos 60 dias de registro para o relatório. Proposta: manter
+   os registros de uma campanha até o **fim dela + 60 dias**, e aplicar os 60
+   dias apenas a registros sem campanha (programas, filler). Confirmar.
+2. **Volume (loudness):** definir o alvo de volume dos comerciais e dos
+   programas (explicação na conversa; norma seguida pela emissora a confirmar).
+3. Dados da emissora e arquivo do logotipo para o cabeçalho do PDF.
