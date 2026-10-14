@@ -7,6 +7,7 @@ use std::{
 use std::time::Duration;
 
 use axum::{Router, middleware};
+use chrono::Utc;
 use lazy_limit::{Duration as LDuration, RuleConfig, init_rate_limiter};
 use log::*;
 use protect_axum::GrantsLayer;
@@ -35,6 +36,7 @@ use ffplayout::{
     },
     sse::{SseAuthState, broadcast::Broadcaster},
     utils::{
+        airlog,
         args_parse::init_args,
         channels::initialize_channels,
         config::get_config,
@@ -120,8 +122,12 @@ async fn async_main() -> Result<(), ProcessError> {
         Err(error) => error!("Cannot check interrupted spot conversions: {error}"),
     }
 
+    airlog::close_open_rows(&pool, Utc::now()).await;
+
     let system = SystemStat::new();
     let shutdown = CancellationToken::new();
+
+    tokio::spawn(airlog::run_maintenance(pool.clone(), shutdown.clone()));
 
     let app_state = AppState {
         auth_state: Arc::new(SseAuthState::default()),

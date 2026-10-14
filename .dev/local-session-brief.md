@@ -75,8 +75,10 @@ LOCAL (você): valida o que depende do mundo real, que a nuvem não alcança:
      scripts/dev/commercials_smoke.py.
   2. M3 com a GRADE REAL da emissora: .dev/acceptance/M3.md. Prévia legível
      do dia: scripts/dev/commercials_plan_preview.py.
-- Próxima etapa (na nuvem): M4, registro de veiculação (as-run).
-- Ainda NÃO existem: registro de veiculação, relatórios, geração automática
+- M4 (registro de veiculação, as-run) está implementada na nuvem. Roteiro de
+  aceite: .dev/acceptance/M4.md (precisa de playout real rodando).
+- Próxima etapa (na nuvem): M5, relatórios CSV e PDF.
+- Ainda NÃO existem: relatórios, geração automática
   dos próximos dias nem telas do módulo (a grade se cadastra por JSON).
 
 ## Como conduzir uma validação

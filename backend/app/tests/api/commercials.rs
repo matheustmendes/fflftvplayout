@@ -1243,3 +1243,105 @@ async fn plan_routes_validate_the_date_and_the_channel() {
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+#[serial]
+async fn an_applied_plan_promises_its_spots_in_the_airing_log() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let spot_id = prepare_thursday(&fixture, &admin, &operator).await;
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-10",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, log) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/airlog",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+    let rows = log.as_array().unwrap();
+
+    assert_eq!(status, StatusCode::OK, "{log}");
+    assert_eq!(rows.len(), 1, "the plan holds one spot: {log}");
+    assert_eq!(rows[0]["spot_id"], spot_id);
+    assert_eq!(rows[0]["result"], "pending");
+    assert_eq!(rows[0]["air_date"], "2026-12-10");
+    assert_eq!(rows[0]["advertiser_name"], "Padaria");
+    assert!(rows[0]["planned_start"].is_string());
+    assert!(rows[0]["actual_start"].is_null());
+
+    // Applying the day again replaces its promises instead of doubling them.
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-10?overwrite=true",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+
+    let (_, log) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/airlog?date_from=2026-12-10&date_to=2026-12-10&result=pending",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(log.as_array().unwrap().len(), 1);
+
+    for (query, expected) in [
+        ("result=played", 0),
+        ("kind=live", 0),
+        ("date_from=2026-12-11", 0),
+        ("limit=1", 1),
+    ] {
+        let (_, log) = send(
+            &fixture,
+            "GET",
+            &format!("/api/commercials/1/airlog?{query}"),
+            Some(&operator),
+            json!(null),
+        )
+        .await;
+
+        assert_eq!(log.as_array().unwrap().len(), expected, "{query}");
+    }
+
+    let (status, _) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/airlog?date_from=tomorrow",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/airlog",
+        None,
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

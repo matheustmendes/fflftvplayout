@@ -3,7 +3,8 @@
 
 use std::path::Path;
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, Utc};
+use log::*;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 
@@ -15,6 +16,7 @@ use crate::{
     file::norm_abs_path,
     player::utils::{JsonPlaylist, Media, probe_media},
     utils::{
+        airlog::record_plan,
         break_planner::{
             DayPlan, ItemKind, PlanCampaign, PlanFiller, PlanInput, PlanProgram, PlanSpot,
             PlanWarning, PlanWindow, Severity, WarningCode, plan_day,
@@ -314,7 +316,9 @@ pub fn plan_to_playlist(plan: &DayPlan, channel_name: &str, date: NaiveDate) -> 
 /// Write the plan as the playlist of its date. An existing playlist is only
 /// replaced when `overwrite` is set, since an operator may have edited it.
 pub async fn apply_plan(
+    pool: &SqlitePool,
     config: &PlayoutConfig,
+    channel_id: i32,
     channel_name: &str,
     plan: &DayPlan,
     date: NaiveDate,
@@ -338,14 +342,22 @@ pub async fn apply_plan(
         )));
     }
 
-    match write_playlist(config, plan_to_playlist(plan, channel_name, date)).await {
+    let message = match write_playlist(config, plan_to_playlist(plan, channel_name, date)).await {
         // The same playlist is already in place.
-        Err(ServiceError::Conflict(_)) => Ok(format!(
+        Err(ServiceError::Conflict(_)) => format!(
             "the playlist for {} is already up to date",
             date.format("%Y-%m-%d")
-        )),
-        other => other,
+        ),
+        other => other?,
+    };
+
+    // The promised spots are recorded for the as-run log. A failure here must
+    // not undo a playlist that is already written, so it is only reported.
+    if let Err(error) = record_plan(pool, channel_id, config, plan, date, Utc::now()).await {
+        error!("Cannot record the planned spots of {date}: {error}");
     }
+
+    Ok(message)
 }
 
 #[cfg(test)]
@@ -695,9 +707,17 @@ mod tests {
             .await
             .unwrap();
 
-        apply_plan(&fixture.config, "Channel", &plan, thursday(), false)
-            .await
-            .unwrap();
+        apply_plan(
+            &fixture.pool,
+            &fixture.config,
+            1,
+            "Channel",
+            &plan,
+            thursday(),
+            false,
+        )
+        .await
+        .unwrap();
 
         let stored = read_playlist(&fixture.config, "2026-10-15".to_string())
             .await
@@ -726,9 +746,17 @@ mod tests {
             .await
             .unwrap();
 
-        apply_plan(&fixture.config, "Channel", &plan, thursday(), false)
-            .await
-            .unwrap();
+        apply_plan(
+            &fixture.pool,
+            &fixture.config,
+            1,
+            "Channel",
+            &plan,
+            thursday(),
+            false,
+        )
+        .await
+        .unwrap();
 
         assert!(
             preview_date(&fixture.pool, &fixture.config, 1, thursday())
@@ -737,13 +765,30 @@ mod tests {
                 .playlist_exists
         );
         assert!(matches!(
-            apply_plan(&fixture.config, "Channel", &plan, thursday(), false).await,
+            apply_plan(
+                &fixture.pool,
+                &fixture.config,
+                1,
+                "Channel",
+                &plan,
+                thursday(),
+                false
+            )
+            .await,
             Err(ServiceError::Conflict(_))
         ));
 
-        let message = apply_plan(&fixture.config, "Channel", &plan, thursday(), true)
-            .await
-            .unwrap();
+        let message = apply_plan(
+            &fixture.pool,
+            &fixture.config,
+            1,
+            "Channel",
+            &plan,
+            thursday(),
+            true,
+        )
+        .await
+        .unwrap();
 
         assert!(message.contains("up to date"), "{message}");
 
@@ -753,9 +798,17 @@ mod tests {
             .await
             .unwrap();
 
-        apply_plan(&fixture.config, "Channel", &changed, thursday(), true)
-            .await
-            .unwrap();
+        apply_plan(
+            &fixture.pool,
+            &fixture.config,
+            1,
+            "Channel",
+            &changed,
+            thursday(),
+            true,
+        )
+        .await
+        .unwrap();
 
         let stored = read_playlist(&fixture.config, "2026-10-15".to_string())
             .await
@@ -773,7 +826,16 @@ mod tests {
             .unwrap();
 
         assert!(matches!(
-            apply_plan(&fixture.config, "Channel", &plan, friday, true).await,
+            apply_plan(
+                &fixture.pool,
+                &fixture.config,
+                1,
+                "Channel",
+                &plan,
+                friday,
+                true
+            )
+            .await,
             Err(ServiceError::Conflict(_))
         ));
         assert!(

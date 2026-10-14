@@ -220,4 +220,44 @@ Limitações conhecidas e decisões a confirmar com o cliente:
   estão definidas assim; ver as perguntas em `.dev/acceptance/M3.md`.
 - Ainda não há geração automática dos próximos dias (M7).
 
-## Próximo: M4, registro de veiculação (as-run)
+## M4, registro de veiculação (as-run): implementada na nuvem
+
+- Migration `00009_airlog.sql`: tabela `airlog` (previsto e veiculado na mesma
+  linha), com nomes de anunciante, campanha e spot copiados para a linha, de
+  modo que renomear depois não altera um relatório já gerado.
+- Ciclo de uma linha de spot: `pending` (ao aplicar o plano) → `airing` (ao
+  começar) → `played`, `partial`, `skipped`, `interrupted`, `fallback`,
+  `failed`. Sem veiculação: `not_aired` ou `live_missed` (o horário foi
+  tomado por um ao vivo). Spot inserido à mão na playlist vira linha sem
+  campos de plano.
+- Entradas ao vivo são registradas como janelas (`kind = live`), o que explica
+  um spot que não foi ao ar.
+- `utils/airlog.rs`: o `play_loop` só chama `start_tracking`, que dispara uma
+  tarefa; todas as escritas no banco ficam nela. Banco lento, travado ou
+  fechado atrasa o registro, nunca o ar (teste cobre isso).
+- Casamento do plano com o que tocou: mesmo arquivo e `planned_begin_sec` mais
+  próximo.
+- Manutenção a cada 5 min: conciliação (spot vencido há mais de 2 min vira
+  `not_aired` ou `live_missed`) e expurgo de 60 dias, preservando o histórico
+  de campanhas encerradas há menos de 60 dias. Na partida, linhas abertas
+  viram `interrupted`.
+- API: `GET /api/commercials/{canal}/airlog` (operador lê), com filtros
+  `date_from`, `date_to`, `campaign_id`, `advertiser_id`, `result`, `kind`,
+  `limit`.
+- Aplicar um plano (`POST .../plan/{data}`) regrava as promessas ainda não
+  vencidas da data, sem duplicar.
+
+Limitações e decisões:
+
+- O mapeamento usa a data da playlist em execução; uma playlist trocada na hora
+  por um operador gera linhas sem plano.
+- A duração "tocada" é de relógio de parede; um spot que roda ≥ 90 % do tempo
+  conta como `played`, abaixo disso `partial`.
+- Relatórios CSV e PDF são a M5; a tela é a M6.
+
+Verificação (nuvem): fmt, clippy `--deny warnings`, testes de handles (15),
+domínio (classificação, rastreador, não bloqueio do ar, ao vivo, conciliação,
+expurgo, partida), HTTP, e o teste real do engine (ignorado por padrão) agora
+confirma que o spot aparece como `played` com horários reais.
+
+## Próximo: M5, relatórios (CSV e PDF)

@@ -62,6 +62,7 @@ pub fn routes() -> Router<AppState> {
                     "/commercials/{id}/plan/{date}",
                     get(preview_day_plan).post(apply_day_plan),
                 )
+                .route("/commercials/{id}/airlog", get(get_airlog))
                 .route("/commercials/{id}/spots", get(get_spots).post(add_spot))
                 .route("/commercials/{id}/spots/{spot}", delete(remove_spot))
                 .route(

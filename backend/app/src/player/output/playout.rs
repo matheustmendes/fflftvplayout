@@ -22,6 +22,7 @@ use crate::{
         utils::{Media, get_delta, sec_to_time},
     },
     utils::{
+        airlog::{ClipTracker, current_air_date, start_tracking, watch_live},
         config::{ENGINE_AUDIO_SAMPLE_RATE, OutputMode, PlayoutConfig, RecordingSource},
         control::{PlayerCtl, control_state},
         errors::ServiceError,
@@ -100,12 +101,20 @@ pub async fn player(manager: ChannelManager) -> Result<(), ServiceError> {
         info!(channel = config.general.channel_id; "Started {count} live listener(s)");
     }
 
+    let live_log_token = CancellationToken::new();
+    let live_log = tokio::spawn(watch_live(manager.clone(), live_log_token.clone()));
+
     let result = match config.output.mode {
         OutputMode::HLS => play_hls(manager.clone(), &config, &playout).await,
         _ => play_loop(manager.clone(), &config, &playout, None).await,
     };
 
     let finish_result = playout.finish().await.map_err(engine_error);
+
+    live_log_token.cancel();
+    // The watcher closes an open live window before it returns.
+    let _ = live_log.await;
+
     result?;
     finish_result
 }
@@ -251,7 +260,8 @@ async fn play_loop(
             1.0
         };
         let is_ad = node.ad;
-        match playout
+        let tracker = track_clip(&manager, config, &node, duration).await;
+        let clip_result = playout
             .play_with_timing_logo_fade_rate_and_audio(
                 node.source.clone(),
                 (node.seek > 0.0).then_some(node.seek),
@@ -265,8 +275,15 @@ async fn play_loop(
                 playout_rate,
             )
             .await
-            .map_err(engine_error)?
-        {
+            .map_err(engine_error);
+
+        finish_tracking(
+            tracker,
+            &clip_result,
+            manager.is_alive.load(Ordering::SeqCst),
+        );
+
+        match clip_result? {
             ClipResult::LiveEnded => {
                 info!(channel = id;
                     "Live input ended; reinitialize playlist at current time"
@@ -319,6 +336,47 @@ async fn play_loop(
     }
 
     Ok(())
+}
+
+/// Start the as-run record of a spot. Only advertising is looked up, and the
+/// record is written by a spawned task, so the air never waits for it.
+async fn track_clip(
+    manager: &ChannelManager,
+    config: &PlayoutConfig,
+    node: &Media,
+    duration: Option<f64>,
+) -> Option<ClipTracker> {
+    if !node.ad || node.source.is_empty() {
+        return None;
+    }
+
+    let file_path = Path::new(&node.source)
+        .strip_prefix(&config.storage.path)
+        .map_or_else(
+            |_| node.source.clone(),
+            |path| path.to_string_lossy().to_string(),
+        );
+
+    Some(start_tracking(
+        manager.db_pool.clone(),
+        manager.id,
+        current_air_date(manager).await,
+        file_path,
+        node.begin,
+        duration.unwrap_or(node.out - node.seek),
+    ))
+}
+
+fn finish_tracking(
+    tracker: Option<ClipTracker>,
+    result: &Result<ClipResult, ServiceError>,
+    alive: bool,
+) {
+    match (tracker, result) {
+        (Some(tracker), Ok(result)) => tracker.finish(result, alive),
+        (Some(tracker), Err(error)) => tracker.fail(&error.to_string()),
+        (None, _) => {}
+    }
 }
 
 async fn hls_playout_rate(

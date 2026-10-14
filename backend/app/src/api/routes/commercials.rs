@@ -15,9 +15,10 @@ use crate::{
         state::AppState,
     },
     db::{
-        handles,
+        handles::{self, AiringFilter},
         models::{
-            Advertiser, BreakWindow, Campaign, CommercialSettings, Role, Spot, WeekTemplateItem,
+            Advertiser, AirKind, AirResult, Airing, BreakWindow, Campaign, CommercialSettings,
+            Role, Spot, WeekTemplateItem,
         },
     },
     player::controller::ChannelManager,
@@ -45,6 +46,29 @@ pub struct SpotQuery {
     #[serde(default)]
     pub include_archived: bool,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct AirlogQuery {
+    /// First playlist date, `YYYY-MM-DD`.
+    #[serde(default)]
+    pub date_from: Option<String>,
+    /// Last playlist date, `YYYY-MM-DD`.
+    #[serde(default)]
+    pub date_to: Option<String>,
+    #[serde(default)]
+    pub campaign_id: Option<i32>,
+    #[serde(default)]
+    pub advertiser_id: Option<i32>,
+    #[serde(default)]
+    pub result: Option<AirResult>,
+    #[serde(default)]
+    pub kind: Option<AirKind>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+const AIRLOG_DEFAULT_LIMIT: i64 = 1_000;
+const AIRLOG_MAX_LIMIT: i64 = 10_000;
 
 #[derive(Debug, Deserialize)]
 pub struct WeekdayQuery {
@@ -291,6 +315,46 @@ pub async fn get_spots(
             query.include_archived,
         )
         .await?,
+    ))
+}
+
+/// **Airing log**
+///
+/// What was planned and what really went on the air, oldest first. Live
+/// broadcasts appear as rows of kind `live`.
+///
+/// ```BASH
+/// curl -X GET 'http://127.0.0.1:8787/api/commercials/1/airlog?date_from=2026-10-01&campaign_id=5' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_airlog(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    Query(query): Query<AirlogQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<Vec<Airing>>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    for date in [&query.date_from, &query.date_to].into_iter().flatten() {
+        parse_date(date)?;
+    }
+
+    let filter = AiringFilter {
+        date_from: query.date_from,
+        date_to: query.date_to,
+        campaign_id: query.campaign_id,
+        advertiser_id: query.advertiser_id,
+        result: query.result,
+        kind: query.kind,
+        limit: query
+            .limit
+            .unwrap_or(AIRLOG_DEFAULT_LIMIT)
+            .clamp(1, AIRLOG_MAX_LIMIT),
+    };
+
+    Ok(Json(
+        handles::select_airings(&state.pool, channel, &filter).await?,
     ))
 }
 
@@ -661,7 +725,16 @@ pub async fn apply_day_plan(
     let config = manager.config.read().await.clone();
     let channel_name = manager.channel.lock().await.name.clone();
     let plan = plan_for_date(&state.pool, &config, channel, date).await?;
-    let message = apply_plan(&config, &channel_name, &plan, date, query.overwrite).await?;
+    let message = apply_plan(
+        &state.pool,
+        &config,
+        channel,
+        &channel_name,
+        &plan,
+        date,
+        query.overwrite,
+    )
+    .await?;
 
     Ok(Json(serde_json::json!({
         "message": message,

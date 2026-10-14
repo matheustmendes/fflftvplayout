@@ -22,7 +22,8 @@ use ffplayout::{
     db::{
         handles,
         models::{
-            Advertiser, BreakPosition, BreakWindow, Campaign, CampaignKind, WeekTemplateItem,
+            Advertiser, AirResult, BreakPosition, BreakWindow, Campaign, CampaignKind,
+            WeekTemplateItem,
         },
     },
     player::{controller::ChannelManager, output::player},
@@ -215,10 +216,11 @@ async fn the_engine_plays_a_planned_day_with_the_spot_where_the_break_is() {
     assert!(!plan.has_errors(), "{:?}", plan.warnings);
     assert_eq!(plan.items[0].source, "commercials/spot-1.mp4");
 
-    apply_plan(&config, "Channel", &plan, date, false)
+    apply_plan(&pool, &config, 1, "Channel", &plan, date, false)
         .await
         .unwrap();
 
+    let log_pool = pool.clone();
     let manager = ChannelManager::new(
         pool,
         channel,
@@ -278,6 +280,28 @@ async fn the_engine_plays_a_planned_day_with_the_spot_where_the_break_is() {
         names[..3],
         ["spot-1.mp4", "first.mp4", "second.mp4"],
         "the spot plays first, then the programs in order"
+    );
+
+    // The as-run log: the planned row was claimed by the real airing.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    let rows = handles::select_airings(
+        &log_pool,
+        1,
+        &handles::AiringFilter {
+            limit: 100,
+            ..handles::AiringFilter::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(rows.len(), 1, "one spot aired, once: {rows:?}");
+    assert_eq!(rows[0].result, AirResult::Played, "{:?}", rows[0]);
+    assert!(rows[0].actual_start.is_some() && rows[0].actual_end.is_some());
+    assert!(
+        rows[0].planned_start.is_some(),
+        "the row came from the plan"
     );
     drop(workspace);
 }

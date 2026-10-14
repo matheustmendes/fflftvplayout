@@ -11,6 +11,7 @@ use tokio::fs;
 
 use serde::{Deserialize, Deserializer, de};
 
+pub mod airlog;
 pub mod args_parse;
 pub mod break_planner;
 pub mod channels;
