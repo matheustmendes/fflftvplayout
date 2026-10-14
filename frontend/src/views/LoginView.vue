@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHead } from '@unhead/vue'
 import { useRouter } from 'vue-router'
@@ -7,7 +7,8 @@ import { useRouter } from 'vue-router'
 import { useAuth } from '@/stores/auth'
 import { useIndex } from '@/stores/index'
 
-import SvgIcon from '@/components/utils/SvgIcon.vue'
+import AuthShell from '@/components/ui/AuthShell.vue'
+import PasswordField from '@/components/ui/PasswordField.vue'
 
 const { t } = useI18n()
 const authStore = useAuth()
@@ -15,31 +16,49 @@ const indexStore = useIndex()
 const router = useRouter()
 
 const formError = ref('')
-const showLoginError = ref(false)
 const formPassword = ref('')
 const disabled = ref(false)
+const usernameInput = useTemplateRef<HTMLInputElement>('usernameInput')
+const passwordField = useTemplateRef<InstanceType<typeof PasswordField>>('passwordField')
 
 useHead({
-    title: 'Login',
+    title: computed(() => t('auth2.loginTitle')),
 })
 
+onMounted(() => {
+    // Returning users already have their name filled in: go straight to the password.
+    if (authStore.username) {
+        passwordField.value?.focus()
+    } else {
+        usernameInput.value?.focus()
+    }
+})
+
+function errorFor(status: number): string {
+    if (status === 429) {
+        return t('auth2.tooManyTries')
+    }
+
+    return status >= 500 ? t('auth2.serverError') : t('auth2.wrongLogin')
+}
+
 async function login() {
+    if (disabled.value) {
+        return
+    }
+
     disabled.value = true
+    formError.value = ''
 
     try {
         const result = await authStore.obtainVerificationCode(formPassword.value)
 
         formPassword.value = ''
-        formError.value = ''
 
         if (result.status !== 200) {
-            formError.value = t('alert.wrongLogin')
-            showLoginError.value = true
+            formError.value = errorFor(result.status)
             disabled.value = false
-
-            setTimeout(() => {
-                showLoginError.value = false
-            }, 3000)
+            passwordField.value?.focus()
 
             return
         }
@@ -54,54 +73,52 @@ async function login() {
 
         await router.replace({ name: 'home' })
         disabled.value = false
-    } catch (e) {
+    } catch {
         disabled.value = false
-        formError.value = e as string
+        formError.value = t('auth2.serverError')
     }
 }
 </script>
 <template>
-    <div class="w-full min-h-screen xs:h-full flex justify-center items-center">
-        <div class="w-96 min-w-full flex flex-col justify-center items-center px-4">
-            <h1 class="text-6xl xs:text-8xl">ffplayout</h1>
-
-            <form class="mt-10" @submit.prevent="login">
+    <AuthShell :title="t('auth2.welcome')" :subtitle="t('auth2.welcomeText')">
+        <form class="flex flex-col gap-5" @submit.prevent="login">
+            <div>
+                <label class="block text-sm font-semibold mb-1" for="login-username">{{ t('auth2.username') }}</label>
                 <input
+                    id="login-username"
+                    ref="usernameInput"
                     v-model="authStore.username"
                     type="text"
                     name="username"
-                    :placeholder="t('input.username')"
-                    class="input w-full focus:border-base-content/30 focus:outline-base-content/30"
+                    autocomplete="username"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    :placeholder="t('auth2.usernamePlaceholder')"
+                    class="input input-lg w-full"
+                    :class="formError && 'input-error'"
                     required
                 />
+            </div>
 
-                <input
-                    v-model="formPassword"
-                    type="password"
-                    name="password"
-                    :placeholder="t('input.password')"
-                    class="input w-full mt-5 focus:border-base-content/30 focus:outline-base-content/30"
-                    required
-                />
+            <PasswordField
+                ref="passwordField"
+                v-model="formPassword"
+                :label="t('auth2.password')"
+                :placeholder="t('auth2.passwordPlaceholder')"
+                :invalid="Boolean(formError)"
+            />
 
-                <div class="w-full mt-4 grid grid-flow-row-dense grid-cols-12 grid-rows-1 gap-2">
-                    <div class="col-span-3">
-                        <button type="submit" class="btn btn-primary" :disabled="disabled">
-                            {{ t('button.login') }}
-                        </button>
-                    </div>
-                    <div class="col-span-12 sm:col-span-9">
-                        <div
-                            v-if="showLoginError"
-                            role="alert"
-                            class="alert alert-error w-auto rounded-sm z-2 h-12 p-[0.7rem]"
-                        >
-                            <SvgIcon name="error" />
-                            <span>{{ formError }}</span>
-                        </div>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
+            <div v-if="formError" role="alert" class="alert alert-error text-base">
+                <i class="bi bi-exclamation-triangle-fill text-xl" />
+                <span class="font-semibold">{{ formError }}</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-full" :disabled="disabled">
+                <span v-if="disabled" class="loading loading-spinner" />
+                {{ disabled ? t('auth2.entering') : t('auth2.enter') }}
+            </button>
+        </form>
+
+        <template #footer>{{ t('auth2.forgotHelp') }}</template>
+    </AuthShell>
 </template>

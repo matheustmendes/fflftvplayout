@@ -1,16 +1,27 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 import { useHead } from '@unhead/vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+
+import AuthShell from '@/components/ui/AuthShell.vue'
+import HelpTip from '@/components/ui/HelpTip.vue'
+import PasswordField from '@/components/ui/PasswordField.vue'
+
+type PathKey = 'storage' | 'playlists' | 'public' | 'logs'
+
+const PATH_KEYS: PathKey[] = ['storage', 'playlists', 'public', 'logs']
 
 const { t } = useI18n()
 const router = useRouter()
 
 const loading = ref(true)
 const submitting = ref(false)
+const showAdvanced = ref(false)
 const error = ref('')
 const confirmPassword = ref('')
+const suggested = ref({} as Partial<Record<PathKey, string>>)
+const usernameInput = useTemplateRef<HTMLInputElement>('usernameInput')
 const form = ref({
     logs: '',
     playlists: '',
@@ -28,7 +39,10 @@ const form = ref({
     two_factor: true,
 })
 
-useHead({ title: t('setup.title') })
+const passwordMismatch = computed(() => confirmPassword.value !== '' && form.value.password !== confirmPassword.value)
+const twoFactorWithoutMail = computed(() => form.value.two_factor && !form.value.smtp_server.trim())
+
+useHead({ title: computed(() => t('auth2.init.title')) })
 
 onMounted(loadSetup)
 
@@ -43,11 +57,19 @@ async function loadSetup() {
         }
 
         Object.assign(form.value, data.settings)
+
+        // Remember what the system proposed so the operator can always go back to it.
+        for (const key of PATH_KEYS) {
+            suggested.value[key] = form.value[key]
+        }
     } catch {
         error.value = t('setup.loadFailed')
     } finally {
         loading.value = false
     }
+
+    await nextTick()
+    usernameInput.value?.focus()
 }
 
 async function submit() {
@@ -80,88 +102,222 @@ async function submit() {
 </script>
 
 <template>
-    <div class="w-full min-h-screen flex justify-center py-10 px-4">
-        <div class="w-full max-w-200">
-            <h1 class="text-4xl">ffplayout</h1>
-            <h2 class="mt-2 text-2xl">{{ t('setup.title') }}</h2>
-            <form v-if="!loading" class="mt-8 flex flex-col gap-1" @submit.prevent="submit">
-                <h3 class="text-xl">{{ t('config.global') }}</h3>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.logsPath') }}</legend>
-                    <input v-model="form.logs" name="logs" type="text" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.playlistPath') }}</legend>
-                    <input v-model="form.playlists" name="playlists" type="text" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.publicPath') }}</legend>
-                    <input v-model="form.public" name="public" type="text" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.storagePath') }}</legend>
-                    <input v-model="form.storage" name="storage" type="text" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset mt-2">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="form.shared" type="checkbox" class="checkbox" />
-                        {{ t('config.sharedStorage') }}
-                    </label>
-                </fieldset>
-
-                <h3 class="mt-6 text-xl">{{ t('config.smtp') }}</h3>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.smtpServer') }}</legend>
-                    <input v-model="form.smtp_server" name="smtp_server" type="text" class="input w-full" />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.smtpUser') }}</legend>
-                    <input v-model="form.smtp_user" name="smtp_user" type="text" class="input w-full" />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.smtpPassword') }}</legend>
-                    <input v-model="form.smtp_password" type="password" class="input w-full" />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('config.smtpPort') }}</legend>
-                    <input v-model.number="form.smtp_port" type="number" min="1" max="65535" class="input w-full" />
-                </fieldset>
-                <fieldset class="fieldset mt-2">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="form.smtp_starttls" type="checkbox" class="checkbox" />
-                        {{ t('config.smtpStarttls') }}
-                    </label>
-                </fieldset>
-
-                <h3 class="mt-6 text-xl">{{ t('setup.admin') }}</h3>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('input.username') }}</legend>
-                    <input v-model="form.username" name="username" type="text" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('user.mail') }}</legend>
-                    <input v-model="form.mail" name="mail" type="email" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('input.password') }}</legend>
-                    <input v-model="form.password" type="password" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset">
-                    <legend class="fieldset-legend">{{ t('setup.confirmPassword') }}</legend>
-                    <input v-model="confirmPassword" type="password" class="input w-full" required />
-                </fieldset>
-                <fieldset class="fieldset mt-2">
-                    <label class="fieldset-label text-base-content">
-                        <input v-model="form.two_factor" type="checkbox" class="checkbox" />
-                        {{ t('user.twoFactor') }}
-                    </label>
-                </fieldset>
-
-                <p v-if="error" class="mt-3 text-error">{{ error }}</p>
-                <button type="submit" class="btn btn-primary mt-5 self-start" :disabled="submitting">
-                    {{ t('setup.complete') }}
-                </button>
-            </form>
+    <AuthShell wide :title="t('auth2.init.heading')" :subtitle="t('auth2.init.subtitle')">
+        <div v-if="loading" class="flex justify-center py-10">
+            <span class="loading loading-spinner loading-lg text-primary" />
         </div>
-    </div>
+
+        <form v-else class="flex flex-col gap-8" @submit.prevent="submit">
+            <!-- 1. Administrator -->
+            <section>
+                <h2 class="flex items-center gap-3 text-xl font-bold">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-content"
+                        >1</span
+                    >
+                    {{ t('auth2.init.adminTitle') }}
+                </h2>
+                <p class="mt-1 opacity-70">{{ t('auth2.init.adminText') }}</p>
+
+                <div class="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="block text-sm font-semibold mb-1" for="init-username">
+                            {{ t('auth2.init.username') }}
+                        </label>
+                        <input
+                            id="init-username"
+                            ref="usernameInput"
+                            v-model="form.username"
+                            name="username"
+                            type="text"
+                            autocomplete="username"
+                            autocapitalize="off"
+                            :placeholder="t('auth2.init.usernamePlaceholder')"
+                            class="input input-lg w-full"
+                            required
+                        />
+                        <p class="mt-1 text-sm opacity-70">{{ t('auth2.init.usernameHelp') }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold mb-1" for="init-mail">
+                            {{ t('auth2.init.mail') }}
+                        </label>
+                        <input
+                            id="init-mail"
+                            v-model="form.mail"
+                            name="mail"
+                            type="email"
+                            autocomplete="email"
+                            :placeholder="t('auth2.init.mailPlaceholder')"
+                            class="input input-lg w-full"
+                            required
+                        />
+                        <p class="mt-1 text-sm opacity-70">{{ t('auth2.init.mailHelp') }}</p>
+                    </div>
+                    <PasswordField
+                        v-model="form.password"
+                        name="new-password"
+                        autocomplete="new-password"
+                        :label="t('auth2.init.password')"
+                        :hint="t('auth2.init.passwordHelp')"
+                    />
+                    <PasswordField
+                        v-model="confirmPassword"
+                        name="confirm-password"
+                        autocomplete="new-password"
+                        :label="t('auth2.init.confirmPassword')"
+                        :invalid="passwordMismatch"
+                        :hint="passwordMismatch ? t('setup.passwordMismatch') : t('auth2.init.confirmHelp')"
+                    />
+                </div>
+
+                <label class="mt-4 flex items-start gap-3 cursor-pointer">
+                    <input v-model="form.two_factor" type="checkbox" class="toggle toggle-primary mt-0.5" />
+                    <span>
+                        <span class="block font-semibold">{{ t('auth2.init.twoFactor') }}</span>
+                        <span class="block text-sm opacity-70">{{ t('auth2.init.twoFactorHelp') }}</span>
+                    </span>
+                </label>
+                <div v-if="twoFactorWithoutMail" class="alert alert-warning mt-3 text-sm">
+                    <i class="bi bi-exclamation-triangle-fill text-lg" />
+                    <span>{{ t('auth2.init.twoFactorWarning') }}</span>
+                </div>
+            </section>
+
+            <!-- 2. Folders -->
+            <section>
+                <h2 class="flex items-center gap-3 text-xl font-bold">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-content"
+                        >2</span
+                    >
+                    {{ t('auth2.init.foldersTitle') }}
+                </h2>
+                <p class="mt-1 opacity-70">{{ t('auth2.init.foldersText') }}</p>
+
+                <div class="mt-4 flex flex-col gap-4">
+                    <div v-for="key in PATH_KEYS" :key="key">
+                        <label class="flex items-center gap-1 text-sm font-semibold mb-1" :for="`init-${key}`">
+                            {{ t(`auth2.init.paths.${key}.label`) }}
+                            <HelpTip :text="t(`auth2.init.paths.${key}.tip`)" />
+                        </label>
+                        <input
+                            :id="`init-${key}`"
+                            v-model="form[key]"
+                            :name="key"
+                            type="text"
+                            class="input w-full font-mono"
+                            autocapitalize="off"
+                            spellcheck="false"
+                            required
+                        />
+                        <p class="mt-1 text-sm opacity-70">{{ t(`auth2.init.paths.${key}.help`) }}</p>
+                        <p v-if="suggested[key] && form[key] !== suggested[key]" class="mt-1 text-sm">
+                            {{ t('auth2.init.suggested') }}
+                            <code class="font-mono">{{ suggested[key] }}</code>
+                            <button type="button" class="btn btn-xs ms-2" @click="form[key] = suggested[key] ?? ''">
+                                {{ t('auth2.init.useSuggested') }}
+                            </button>
+                        </p>
+                    </div>
+
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input v-model="form.shared" type="checkbox" class="checkbox mt-0.5" />
+                        <span>
+                            <span class="block font-semibold">{{ t('auth2.init.shared') }}</span>
+                            <span class="block text-sm opacity-70">{{ t('auth2.init.sharedHelp') }}</span>
+                        </span>
+                    </label>
+                </div>
+            </section>
+
+            <!-- 3. Email sending (advanced) -->
+            <section>
+                <button
+                    type="button"
+                    class="flex w-full items-center gap-3 text-left text-xl font-bold cursor-pointer"
+                    :aria-expanded="showAdvanced"
+                    @click="showAdvanced = !showAdvanced"
+                >
+                    <span class="flex h-8 w-8 items-center justify-center rounded-full bg-base-300">3</span>
+                    <span class="grow">{{ t('auth2.init.mailTitle') }}</span>
+                    <i class="bi text-base" :class="showAdvanced ? 'bi-chevron-up' : 'bi-chevron-down'" />
+                </button>
+                <p class="mt-1 opacity-70">{{ t('auth2.init.mailText') }}</p>
+
+                <div v-if="showAdvanced" class="mt-4 rounded-xl bg-base-200 p-4">
+                    <p class="mb-3 text-sm opacity-70">{{ t('ui.advancedHelp') }}</p>
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <label class="block text-sm font-semibold mb-1" for="init-smtp-server">
+                                {{ t('auth2.init.smtp.server') }}
+                            </label>
+                            <input
+                                id="init-smtp-server"
+                                v-model="form.smtp_server"
+                                name="smtp_server"
+                                type="text"
+                                class="input w-full"
+                                placeholder="smtp.exemplo.com.br"
+                            />
+                            <p class="mt-1 text-sm opacity-70">{{ t('auth2.init.smtp.serverHelp') }}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-1" for="init-smtp-port">
+                                {{ t('auth2.init.smtp.port') }}
+                            </label>
+                            <input
+                                id="init-smtp-port"
+                                v-model.number="form.smtp_port"
+                                type="number"
+                                min="1"
+                                max="65535"
+                                class="input w-full"
+                            />
+                            <p class="mt-1 text-sm opacity-70">{{ t('auth2.init.smtp.portHelp') }}</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold mb-1" for="init-smtp-user">
+                                {{ t('auth2.init.smtp.user') }}
+                            </label>
+                            <input
+                                id="init-smtp-user"
+                                v-model="form.smtp_user"
+                                name="smtp_user"
+                                type="text"
+                                class="input w-full"
+                                autocapitalize="off"
+                            />
+                        </div>
+                        <PasswordField
+                            v-model="form.smtp_password"
+                            name="smtp-password"
+                            autocomplete="new-password"
+                            :label="t('auth2.init.smtp.password')"
+                            :required="false"
+                        />
+                    </div>
+                    <label class="mt-4 flex items-start gap-3 cursor-pointer">
+                        <input v-model="form.smtp_starttls" type="checkbox" class="checkbox mt-0.5" />
+                        <span>
+                            <span class="block font-semibold">{{ t('auth2.init.smtp.starttls') }}</span>
+                            <span class="block text-sm opacity-70">{{ t('auth2.init.smtp.starttlsHelp') }}</span>
+                        </span>
+                    </label>
+                </div>
+            </section>
+
+            <div v-if="error" role="alert" class="alert alert-error">
+                <i class="bi bi-exclamation-triangle-fill text-xl" />
+                <span class="font-semibold break-words">{{ error }}</span>
+            </div>
+
+            <div>
+                <button type="submit" class="btn btn-primary btn-lg w-full sm:w-auto" :disabled="submitting">
+                    <span v-if="submitting" class="loading loading-spinner" />
+                    <i v-else class="bi bi-check-lg" />
+                    {{ t('auth2.init.finish') }}
+                </button>
+                <p class="mt-2 text-sm opacity-70">{{ t('auth2.init.finishHelp') }}</p>
+            </div>
+        </form>
+    </AuthShell>
 </template>

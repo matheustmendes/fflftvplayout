@@ -1,6 +1,7 @@
 import commercial from './commercial/en-US.ts'
 import ux from './ux/en-US.ts'
 import settings2 from './ux/settings.en-US.ts'
+import screens from './ux/screens.en-US.ts'
 
 export default {
     ok: 'Ok',
@@ -14,6 +15,7 @@ export default {
     commercial,
     ...ux,
     settings2,
+    ...screens,
     button: {
         commercial: 'Advertising',
         login: 'Login',
