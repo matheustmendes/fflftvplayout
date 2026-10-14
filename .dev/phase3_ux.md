@@ -34,14 +34,14 @@ interação, **100% amigável para quem não entende de TV nem de informática**
 
 | # | Entrega | Situação |
 |---|---|---|
-| 3.1 | Fundação visual: paleta com contraste, botões com hierarquia, componentes (`ui/`) | |
-| 3.2 | Navegação nova + estado do canal (NO AR / PARADO / REINICIANDO / AO VIVO) sempre visível | |
-| 3.3 | Painel inicial: estado, agora e próximo, cobertura de 14 dias, avisos, primeiros passos | |
-| 3.4 | Player renomeado "No ar": botões com texto e confirmação | |
+| 3.1 | Fundação visual: paleta com contraste, botões com hierarquia, componentes (`ui/`) | feito |
+| 3.2 | Navegação nova + estado do canal (NO AR / PARADO / REINICIANDO / AO VIVO) sempre visível | feito |
+| 3.3 | Painel inicial: estado, agora e próximo, cobertura de 14 dias, avisos, primeiros passos | feito |
+| 3.4 | Player renomeado "No ar": botões com texto e confirmação | feito |
 | 3.5 | Ajustes: simples por padrão, avançado escondido | |
 | 3.6 | Arquivos, Texto na tela, Histórico, Login e Primeiro acesso | |
-| 3.7 | Editor visual da grade (arrastar e soltar) com validação em linguagem simples | |
-| 3.8 | Operador: menu e ações reduzidas | |
+| 3.7 | Editor visual da grade (arrastar e soltar) com validação em linguagem simples | feito |
+| 3.8 | Operador: menu e ações reduzidas | feito |
 
 Idiomas: pt-BR (principal) e en-US. Alemão e russo herdados do projeto original
 caem para o inglês nos textos novos.
