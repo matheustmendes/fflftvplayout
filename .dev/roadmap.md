@@ -132,13 +132,59 @@ horário e o EPG continuam valendo, e o engine não muda.
 - Deploy na VPS (Docker Compose ou `.deb`), monitoramento e alertas por
   e-mail/HTTP, contingência opcional.
 
-## 5. Questões em aberto
+## 5. Decisões do cliente (respondidas pelo usuário)
 
-1. RTMP: os destinos puxam ou a emissora empurra para eles?
-2. Intervalos: horários fixos do relógio ou "a cada X minutos"? Um conjunto de
-   spots por dia ou campanhas com vigência e anunciante?
-3. Pode cortar o programa no meio, ou só em pontos marcados / entre programas?
-4. Durante o ao vivo longo, os intervalos continuam entrando?
-5. Quem envia os comerciais e por onde (upload pela interface, pasta de rede)?
-6. O cliente precisa de relatório de veiculação por anunciante?
-7. Qual a banda de saída disponível na VPS e quantos destinos simultâneos?
+| Tema | Decisão | Consequência |
+|---|---|---|
+| RTMP | A emissora entrega o link RTMP aos destinos, que **puxam** o sinal | O ffplayout só envia; quem serve RTMP, SRT e HLS é o relay. Sem relay não há como atender os destinos. |
+| Horário dos intervalos | **Fixos no relógio** | Exige horário fixo de programa (fase 2.2) e regra para quando o programa não fecha no horário (ver 6.1). |
+| Spots e campanhas | As duas modalidades. Campanha tem início, fim e anunciante | Modelo de dados com campanha e spot avulso (seção 3). |
+| Onde cortar | **Entre programas** | Não é preciso dividir clipes em `in`/`out`. Simplifica a compilação da playlist. |
+| Ao vivo | Raro e de longa duração. Intervalos **continuam entrando** durante o ao vivo | Capacidade nova no engine (ver 6.2). |
+| Envio de comerciais | O **operador** envia pela interface | Upload na UI + conversão automática (MXF → mp4 padronizado) com progresso visível. |
+| Relatórios | Logs e relatórios de campanhas e anúncios | Tabela de veiculação real (as-run), relatório por campanha, anunciante e período, com exportação. |
+| Tolerância fora do ar | 1 min 30 s | Teto de reinício do supervisor e alerta (fase 1.2). |
+| Interface | À prova de leigo | Fase 3. |
+
+## 6. Pontos de desenho a resolver
+
+### 6.1 Intervalo em horário fixo versus fim do programa
+Se o intervalo é às 20:00 e o programa anterior termina às 19:57, ou às
+20:04, é preciso uma regra. Proposta:
+
+- O horário do intervalo é **nominal**. O compilador procura a fronteira entre
+  programas mais próxima dele e insere o intervalo ali.
+- Se a fronteira estiver a mais de uma tolerância configurável (ex.: 60 s), o
+  sistema **avisa ao montar a grade** ("o intervalo das 20:00 cai 4 min depois
+  do fim do programa X") e propõe completar com filler ou ajustar o programa.
+- Como a grade repete, esse aviso aparece uma vez no planejamento, não no ar.
+
+### 6.2 Intervalos durante o ao vivo [verificado: hoje não é possível]
+Com um ao vivo no ar, a playlist fica suspensa e os comandos de navegação são
+ignorados (`NavigationBlocked::Live`, `engine/src/playback_control.rs`).
+Inserir spots no meio de um ao vivo exige uma capacidade nova no engine:
+interromper a saída ao vivo, tocar o intervalo e voltar ao sinal, que continua
+chegando durante esse tempo.
+
+Proposta em duas etapas:
+1. **Botão do operador** "Intervalo agora" durante o ao vivo (e "Voltar ao
+   vivo"), com o intervalo do dia escolhido automaticamente.
+2. **Automático** nos horários fixos, depois que a etapa 1 estiver estável.
+
+### 6.3 Registro de veiculação (as-run)
+- Gravar no banco cada item ao ar com início e fim **reais** e o resultado
+  (`Played`, `Skipped`, `Fallback`), no ponto onde o app recebe o resultado do
+  engine (`player/output/playout.rs`, `play_loop`). Spot pulado ou que caiu em
+  fallback **não** conta como veiculado.
+- Relatórios: por campanha, anunciante, spot e período; veiculados versus
+  previstos; exportação CSV (e PDF numa etapa posterior).
+
+## 7. Questões em aberto
+
+1. Regra do item 6.1: a proposta (fronteira mais próxima + aviso) atende?
+2. Ao vivo (6.2): começar pelo botão do operador e automatizar depois?
+3. Campanha: precisa de limite de frequência (ex.: no máximo N exibições por
+   dia) e de preferência de posição no intervalo (primeiro/último)?
+4. Quem pode ver os relatórios e eles são enviados aos anunciantes pela
+   emissora (PDF/CSV) ou só consultados internamente?
+5. Qual a banda de saída disponível na VPS e quantos destinos simultâneos?
