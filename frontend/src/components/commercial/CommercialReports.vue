@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
 import { addDays, shortDate, todayInChannel, useCommercialApi } from '@/composables/commercialApi'
@@ -47,7 +48,7 @@ function query() {
 }
 
 function fail(error: unknown) {
-    indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+    indexStore.msgAlert('error', friendlyError(error), 6)
 }
 
 async function load() {

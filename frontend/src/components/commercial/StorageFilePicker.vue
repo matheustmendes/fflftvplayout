@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import GenericModal from '@/components/utils/GenericModal.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { authFetch } from '@/composables/authFetch'
 import { formatDuration } from '@/composables/commercialApi'
 import { useConfig } from '@/stores/config'
@@ -51,7 +52,7 @@ async function browse(path: string) {
         folders.value = (data.folders ?? []).map((folder) => (typeof folder === 'string' ? folder : folder.name))
         files.value = data.files ?? []
     } catch (error) {
-        indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 4)
+        indexStore.msgAlert('error', friendlyError(error), 6)
     } finally {
         loading.value = false
     }

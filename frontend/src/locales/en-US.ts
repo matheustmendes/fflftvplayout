@@ -13,7 +13,7 @@ export default {
     commercial,
     ...ux,
     button: {
-        commercial: 'Commercials',
+        commercial: 'Advertising',
         login: 'Login',
         home: 'Home',
         player: 'Player',

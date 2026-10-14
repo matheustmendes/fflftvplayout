@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 
 import GenericModal from '@/components/utils/GenericModal.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
 import { useFolderUpload } from '@/composables/commercialUpload'
@@ -45,7 +46,7 @@ function onFile(event: Event) {
 }
 
 function fail(error: unknown) {
-    indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+    indexStore.msgAlert('error', friendlyError(error), 6)
 }
 
 async function loadSpots() {

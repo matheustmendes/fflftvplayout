@@ -16,7 +16,7 @@ export default {
     nav: {
         dashboard: 'Dashboard',
         onair: 'On air',
-        commercial: 'Commercials',
+        commercial: 'Advertising',
         files: 'Files',
         message: 'On-screen text',
         history: 'History',
@@ -211,5 +211,16 @@ export default {
                 yes: 'Yes, restart',
             },
         },
+    },
+    errors: {
+        401: 'Your session ended. Log in again.',
+        403: 'You do not have permission to do that.',
+        404: 'Not found. It may have been removed by someone else.',
+        409: 'It could not be done because it conflicts with something that already exists.',
+        413: 'The file is too large.',
+        429: 'Too many attempts in a row. Wait a minute and try again.',
+        500: 'The server had a problem. Try again; if it keeps happening, tell whoever takes care of the system.',
+        other: 'It could not be done.',
+        network: 'No connection to the server. Check the internet.',
     },
 }

@@ -6,6 +6,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
 import type { StatusKind } from '@/components/ui/StatusPill.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { authFetch } from '@/composables/authFetch'
 import { formatDuration } from '@/composables/commercialApi'
 import { useAuth } from '@/stores/auth'
@@ -74,7 +75,7 @@ async function run(action: Action) {
             indexStore.msgAlert('success', t(`dash.now.done.${action}`), 3)
         }
     } catch (error) {
-        indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+        indexStore.msgAlert('error', friendlyError(error), 6)
     } finally {
         busy.value = false
     }

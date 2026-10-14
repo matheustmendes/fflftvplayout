@@ -7,6 +7,7 @@ import StorageFilePicker from '@/components/commercial/StorageFilePicker.vue'
 import WeekdayTabs from '@/components/commercial/WeekdayTabs.vue'
 import type { PickedFile } from '@/components/commercial/StorageFilePicker.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
@@ -66,7 +67,7 @@ const endClock = computed(() => clock(dayStart.value + totalSec.value))
 const COLORS = ['bg-primary', 'bg-accent', 'bg-success', 'bg-info', 'bg-warning']
 
 function fail(error: unknown) {
-    indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+    indexStore.msgAlert('error', friendlyError(error), 6)
 }
 
 async function load() {

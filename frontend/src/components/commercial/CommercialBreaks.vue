@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import GenericModal from '@/components/utils/GenericModal.vue'
 import WeekdayTabs from '@/components/commercial/WeekdayTabs.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
@@ -29,7 +30,7 @@ const totalSec = computed(() =>
 )
 
 function fail(error: unknown) {
-    indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+    indexStore.msgAlert('error', friendlyError(error), 6)
 }
 
 async function load() {

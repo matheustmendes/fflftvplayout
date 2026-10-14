@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import CampaignWizard from '@/components/commercial/CampaignWizard.vue'
 import GenericModal from '@/components/utils/GenericModal.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
@@ -55,7 +56,7 @@ function status(campaign: CommercialCampaign): { label: string; css: string } {
 }
 
 function fail(error: unknown) {
-    indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+    indexStore.msgAlert('error', friendlyError(error), 6)
 }
 
 async function load() {

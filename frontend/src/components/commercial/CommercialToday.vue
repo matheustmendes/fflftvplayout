@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 
 import GenericModal from '@/components/utils/GenericModal.vue'
 
+import { friendlyError } from '@/composables/friendlyError'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
@@ -106,7 +107,7 @@ async function load() {
         airings.value = rows
         autoPlan.value = auto
     } catch (error) {
-        indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 4)
+        indexStore.msgAlert('error', friendlyError(error), 6)
     } finally {
         loading.value = false
     }
@@ -125,7 +126,7 @@ async function apply(confirmed: boolean) {
         indexStore.msgAlert('success', result.message, 4)
         await load()
     } catch (error) {
-        indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
+        indexStore.msgAlert('error', friendlyError(error), 6)
     }
 }
 

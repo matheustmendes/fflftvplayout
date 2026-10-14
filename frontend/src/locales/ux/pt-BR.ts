@@ -16,7 +16,7 @@ export default {
     nav: {
         dashboard: 'Painel',
         onair: 'No ar',
-        commercial: 'Comerciais',
+        commercial: 'Publicidade',
         files: 'Arquivos',
         message: 'Texto na tela',
         history: 'Histórico',
@@ -207,5 +207,16 @@ export default {
                 yes: 'Sim, recomeçar',
             },
         },
+    },
+    errors: {
+        401: 'Sua sessão terminou. Entre de novo.',
+        403: 'Você não tem permissão para fazer isso.',
+        404: 'Não foi encontrado. Pode ter sido removido por outra pessoa.',
+        409: 'Não foi possível concluir porque isso conflita com algo que já existe.',
+        413: 'O arquivo é grande demais.',
+        429: 'Muitas tentativas seguidas. Espere um minuto e tente de novo.',
+        500: 'O servidor teve um problema. Tente de novo; se continuar, avise quem cuida do sistema.',
+        other: 'Não foi possível concluir.',
+        network: 'Sem conexão com o servidor. Verifique a internet.',
     },
 }
