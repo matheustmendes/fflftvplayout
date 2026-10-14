@@ -137,10 +137,10 @@ horário e o EPG continuam valendo, e o engine não muda.
 | Tema | Decisão | Consequência |
 |---|---|---|
 | RTMP | A emissora entrega o link RTMP aos destinos, que **puxam** o sinal | O ffplayout só envia; quem serve RTMP, SRT e HLS é o relay. Sem relay não há como atender os destinos. |
-| Horário dos intervalos | **Fixos no relógio** | Exige horário fixo de programa (fase 2.2) e regra para quando o programa não fecha no horário (ver 6.1). |
+| Horário dos intervalos | **Fixos no relógio** | Exige horário fixo de programa (fase 2.2). Regra de alinhamento aprovada (ver 6.1). |
 | Spots e campanhas | As duas modalidades. Campanha tem início, fim e anunciante | Modelo de dados com campanha e spot avulso (seção 3). |
 | Onde cortar | **Entre programas** | Não é preciso dividir clipes em `in`/`out`. Simplifica a compilação da playlist. |
-| Ao vivo | Raro e de longa duração. Intervalos **continuam entrando** durante o ao vivo | Capacidade nova no engine (ver 6.2). |
+| Ao vivo | Raro e de longa duração. **Sem intervalos durante o ao vivo** (decisão: risco de quebrar > benefício) | Fora de escopo. O ao vivo segue como hoje; o operador agenda a duração e a grade retoma depois (ver 6.2). |
 | Envio de comerciais | O **operador** envia pela interface | Upload na UI + conversão automática (MXF → mp4 padronizado) com progresso visível. |
 | Relatórios | Logs e relatórios de campanhas e anúncios | Tabela de veiculação real (as-run), relatório por campanha, anunciante e período, com exportação. |
 | Tolerância fora do ar | 1 min 30 s | Teto de reinício do supervisor e alerta (fase 1.2). |
@@ -148,9 +148,9 @@ horário e o EPG continuam valendo, e o engine não muda.
 
 ## 6. Pontos de desenho a resolver
 
-### 6.1 Intervalo em horário fixo versus fim do programa
+### 6.1 Intervalo em horário fixo versus fim do programa (aprovado)
 Se o intervalo é às 20:00 e o programa anterior termina às 19:57, ou às
-20:04, é preciso uma regra. Proposta:
+20:04, vale a regra:
 
 - O horário do intervalo é **nominal**. O compilador procura a fronteira entre
   programas mais próxima dele e insere o intervalo ali.
@@ -159,17 +159,23 @@ Se o intervalo é às 20:00 e o programa anterior termina às 19:57, ou às
   do fim do programa X") e propõe completar com filler ou ajustar o programa.
 - Como a grade repete, esse aviso aparece uma vez no planejamento, não no ar.
 
-### 6.2 Intervalos durante o ao vivo [verificado: hoje não é possível]
-Com um ao vivo no ar, a playlist fica suspensa e os comandos de navegação são
+### 6.2 Intervalos durante o ao vivo (fora de escopo)
+Decisão: **não** inserir intervalos durante o ao vivo. Motivo [verificado]: com
+um ao vivo no ar a playlist fica suspensa e os comandos de navegação são
 ignorados (`NavigationBlocked::Live`, `engine/src/playback_control.rs`).
-Inserir spots no meio de um ao vivo exige uma capacidade nova no engine:
-interromper a saída ao vivo, tocar o intervalo e voltar ao sinal, que continua
-chegando durante esse tempo.
+Interromper o ao vivo, tocar o intervalo e voltar ao sinal exigiria uma
+capacidade nova no engine, com risco alto para o caminho crítico do ar.
 
-Proposta em duas etapas:
-1. **Botão do operador** "Intervalo agora" durante o ao vivo (e "Voltar ao
-   vivo"), com o intervalo do dia escolhido automaticamente.
-2. **Automático** nos horários fixos, depois que a etapa 1 estiver estável.
+Comportamento adotado:
+- O ao vivo entra na grade como item com duração definida pelo operador, ou
+  por entrada RTMP/SRT já existente, como hoje.
+- Ao terminar, a playlist retoma no ponto que o relógio indica (comportamento
+  atual). Os intervalos cujo horário caiu dentro do ao vivo **não são
+  recuperados**.
+- O relatório de campanhas deve mostrar esses intervalos como "não veiculados
+  por ao vivo", para não parecerem falha. Registrar o motivo na própria linha
+  de veiculação prevista.
+- Reavaliar apenas se o cliente exigir, e como projeto separado no engine.
 
 ### 6.3 Registro de veiculação (as-run)
 - Gravar no banco cada item ao ar com início e fim **reais** e o resultado
@@ -181,10 +187,8 @@ Proposta em duas etapas:
 
 ## 7. Questões em aberto
 
-1. Regra do item 6.1: a proposta (fronteira mais próxima + aviso) atende?
-2. Ao vivo (6.2): começar pelo botão do operador e automatizar depois?
-3. Campanha: precisa de limite de frequência (ex.: no máximo N exibições por
+1. Campanha: precisa de limite de frequência (ex.: no máximo N exibições por
    dia) e de preferência de posição no intervalo (primeiro/último)?
-4. Quem pode ver os relatórios e eles são enviados aos anunciantes pela
+2. Quem pode ver os relatórios e eles são enviados aos anunciantes pela
    emissora (PDF/CSV) ou só consultados internamente?
-5. Qual a banda de saída disponível na VPS e quantos destinos simultâneos?
+3. Qual a banda de saída disponível na VPS e quantos destinos simultâneos?
