@@ -1345,3 +1345,321 @@ async fn an_applied_plan_promises_its_spots_in_the_airing_log() {
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+async fn send_raw(
+    fixture: &SecurityFixture,
+    uri: &str,
+    token: Option<&str>,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let response = fixture
+        .app
+        .clone()
+        .oneshot(json_request("GET", uri, token, json!(null)))
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+    (status, headers, bytes.to_vec())
+}
+
+/// Log rows as the playout writes them: two spots of one campaign on one day,
+/// one aired and one lost to a live broadcast, plus a spot of another campaign.
+async fn seed_airlog(fixture: &SecurityFixture, campaign_id: i64, advertiser_id: i64) {
+    let pool = &fixture.state.pool;
+
+    for (title, result, planned, actual) in [
+        (
+            "Natal A",
+            "played",
+            "2026-12-10T12:00:00.000Z",
+            Some("2026-12-10T12:00:01.000Z"),
+        ),
+        ("Natal B", "live_missed", "2026-12-10T15:00:00.000Z", None),
+    ] {
+        sqlx::query(
+            "INSERT INTO airlog (channel_id, air_date, kind, campaign_id, advertiser_id,
+                advertiser_name, campaign_name, spot_title, planned_start, planned_duration_sec,
+                actual_start, actual_duration_sec, result)
+            VALUES (1, '2026-12-10', 'spot', $1, $2, 'Padaria', 'Natal', $3, $4, 30.0, $5, $6, $7)",
+        )
+        .bind(campaign_id)
+        .bind(advertiser_id)
+        .bind(title)
+        .bind(planned)
+        .bind(actual)
+        .bind(actual.map(|_| 29.9))
+        .bind(result)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    let other = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO advertiser (channel_id, name) VALUES (1, 'Mercado') RETURNING id",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let other_campaign = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO campaign (channel_id, advertiser_id, name, kind) VALUES (1, $1, 'Verão', 'standalone') RETURNING id",
+    )
+    .bind(other)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    sqlx::query(
+        "INSERT INTO airlog (channel_id, air_date, kind, campaign_id, advertiser_id,
+            advertiser_name, campaign_name, spot_title, planned_start, planned_duration_sec,
+            actual_start, actual_duration_sec, result)
+        VALUES (1, '2026-12-10', 'spot', $1, $2, 'Mercado', 'Verão', '=cmd()', '2026-12-10T13:00:00.000Z',
+            30.0, '2026-12-10T13:00:00.000Z', 30.0, 'played')",
+    )
+    .bind(other_campaign)
+    .bind(other)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[serial]
+async fn report_settings_are_validated_and_only_administrators_change_them() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let storage = fixture.root.join("storage");
+
+    let (status, defaults) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/report-settings",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{defaults}");
+    assert_eq!(defaults["station_name"], "");
+    assert_eq!(defaults["logo_path"], "");
+
+    std::fs::write(storage.join("notes.txt"), b"x").unwrap();
+    std::fs::create_dir_all(storage.join("branding")).unwrap();
+
+    let made = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=200x60",
+            "-frames:v",
+            "1",
+        ])
+        .arg(storage.join("branding/logo.png"))
+        .status()
+        .unwrap();
+
+    assert!(made.success());
+
+    let body = |logo: &str| {
+        json!({
+            "station_name": "TV Exemplo",
+            "station_details": "Rua das Flores, 100\nCNPJ 00.000.000/0001-00",
+            "logo_path": logo,
+            "footer_note": "Documento sem valor fiscal."
+        })
+    };
+
+    let (status, _) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/report-settings",
+        Some(&operator),
+        body(""),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    for (logo, why) in [
+        ("branding/missing.png", "the file does not exist"),
+        ("notes.txt", "it is not an image"),
+        ("../outside.png", "it leaves the storage"),
+    ] {
+        let (status, _) = send(
+            &fixture,
+            "PUT",
+            "/api/commercials/1/report-settings",
+            Some(&admin),
+            body(logo),
+        )
+        .await;
+
+        assert!(status.is_client_error(), "{why}: {status}");
+    }
+
+    let (status, _) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/report-settings",
+        Some(&admin),
+        json!({ "station_name": "x".repeat(500) }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, saved) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/report-settings",
+        Some(&admin),
+        body("branding/logo.png"),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{saved}");
+
+    let (_, read) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/report-settings",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(read["station_name"], "TV Exemplo");
+    assert_eq!(read["logo_path"], "branding/logo.png");
+}
+
+#[tokio::test]
+#[serial]
+async fn an_operator_downloads_the_report_as_summary_csv_and_pdf() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let advertiser_id = create_advertiser(&fixture, &admin, "Padaria").await;
+    let campaign_id = create_campaign(&fixture, &admin, advertiser_id).await;
+
+    seed_airlog(&fixture, campaign_id, advertiser_id).await;
+
+    let period = "date_from=2026-12-01&date_to=2026-12-31";
+    let (status, summary) = send(
+        &fixture,
+        "GET",
+        &format!("/api/commercials/1/reports/summary?{period}&campaign_id={campaign_id}"),
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{summary}");
+    assert_eq!(summary["header"]["campaign"], "Natal");
+    assert_eq!(summary["header"]["advertiser"], "Padaria");
+    assert_eq!(
+        summary["lines"].as_array().unwrap().len(),
+        2,
+        "only this campaign"
+    );
+    assert_eq!(summary["totals"]["planned"], 2);
+    assert_eq!(summary["totals"]["aired"], 1);
+    assert_eq!(summary["totals"]["missed"], 1);
+    assert_eq!(
+        summary["lines"][1]["note"],
+        "Transmissão ao vivo no horário"
+    );
+
+    let (_, everything) = send(
+        &fixture,
+        "GET",
+        &format!("/api/commercials/1/reports/summary?{period}"),
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(everything["lines"].as_array().unwrap().len(), 3);
+
+    let (status, headers, csv) = send_raw(
+        &fixture,
+        &format!("/api/commercials/1/reports/export.csv?{period}"),
+        Some(&operator),
+    )
+    .await;
+    let text = String::from_utf8(csv.clone()).unwrap();
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&csv[..3], [0xEF, 0xBB, 0xBF]);
+    assert_eq!(headers["content-type"], "text/csv; charset=utf-8");
+    assert_eq!(
+        headers["content-disposition"],
+        "attachment; filename=\"veiculacao-todos-2026-12-01-2026-12-31.csv\""
+    );
+    assert!(text.contains("Natal A"));
+    assert!(
+        text.contains("'=cmd()"),
+        "a formula in a name is defused: {text}"
+    );
+
+    let (status, headers, pdf) = send_raw(
+        &fixture,
+        &format!("/api/commercials/1/reports/export.pdf?{period}&campaign_id={campaign_id}"),
+        Some(&operator),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert!(pdf.starts_with(b"%PDF"));
+    assert_eq!(headers["content-type"], "application/pdf");
+    assert_eq!(
+        headers["content-disposition"],
+        "attachment; filename=\"veiculacao-natal-2026-12-01-2026-12-31.pdf\""
+    );
+
+    for (uri, expected) in [
+        (
+            "/api/commercials/1/reports/summary?date_from=2026-12-01",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/api/commercials/1/reports/summary?date_from=x&date_to=y",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/api/commercials/1/reports/summary?date_from=2026-12-31&date_to=2026-12-01",
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            "/api/commercials/1/reports/summary?date_from=2020-01-01&date_to=2026-12-01",
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        let (status, _, _) = send_raw(&fixture, uri, Some(&operator)).await;
+
+        assert_eq!(status, expected, "{uri}");
+    }
+
+    let (status, _, _) = send_raw(
+        &fixture,
+        &format!("/api/commercials/1/reports/export.csv?{period}&campaign_id=9999"),
+        Some(&operator),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _, _) = send_raw(
+        &fixture,
+        &format!("/api/commercials/1/reports/export.pdf?{period}"),
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

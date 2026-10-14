@@ -77,8 +77,10 @@ LOCAL (você): valida o que depende do mundo real, que a nuvem não alcança:
      do dia: scripts/dev/commercials_plan_preview.py.
 - M4 (registro de veiculação, as-run) está implementada na nuvem. Roteiro de
   aceite: .dev/acceptance/M4.md (precisa de playout real rodando).
-- Próxima etapa (na nuvem): M5, relatórios CSV e PDF.
-- Ainda NÃO existem: relatórios, geração automática
+- M5 (relatórios CSV e PDF) está implementada na nuvem. Roteiro de aceite:
+  .dev/acceptance/M5.md (abrir o PDF e o CSV de verdade).
+- Próxima etapa (na nuvem): M6, telas do módulo.
+- Ainda NÃO existem: geração automática
   dos próximos dias nem telas do módulo (a grade se cadastra por JSON).
 
 ## Como conduzir uma validação

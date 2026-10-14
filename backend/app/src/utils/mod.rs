@@ -27,6 +27,8 @@ pub mod notification;
 pub mod paths;
 pub mod playlist;
 pub mod program;
+pub mod report;
+pub mod report_pdf;
 pub mod setup;
 pub mod spot_convert;
 pub mod system;

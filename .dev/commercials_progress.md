@@ -260,4 +260,41 @@ domínio (classificação, rastreador, não bloqueio do ar, ao vivo, conciliaç�
 expurgo, partida), HTTP, e o teste real do engine (ignorado por padrão) agora
 confirma que o spot aparece como `played` com horários reais.
 
-## Próximo: M5, relatórios (CSV e PDF)
+## M5, relatórios (CSV e PDF): implementada na nuvem
+
+- Migration `00010_report_settings.sql`: por canal, nome da emissora, dados
+  (um item por linha), logotipo (PNG ou JPEG no storage, até 2 MB) e nota de
+  rodapé. Nada fixo no código; sem nome configurado, usa o nome do canal.
+- `utils/report.rs`: monta o relatório a partir do `airlog` (cópias de nomes,
+  então renomear depois não altera relatório). Totais por dia: previstas,
+  veiculadas, parciais, não veiculadas, pendentes. Horários no fuso do canal.
+  Textos em pt-BR para o anunciante (o motivo interno em inglês não aparece).
+  `live_missed` vira "Transmissão ao vivo no horário".
+- CSV: UTF-8 com BOM, separador `;`, vírgula decimal (abre direto no Excel
+  pt-BR); campos que começam com `= + - @` são neutralizados contra injeção de
+  fórmula.
+- PDF (`utils/report_pdf.rs`, crate `printpdf` 0.7, fonte Helvetica embutida
+  que cobre acentos): logotipo e dados da emissora, filtros, resumo por dia,
+  tabela de veiculações com cabeçalho repetido a cada página, notas, rodapé e
+  "Página X de Y". Logotipo ilegível é omitido (o relatório sai sem ele).
+- API (operador lê e baixa; só administradores alteram a configuração):
+  `GET/PUT /api/commercials/{canal}/report-settings`,
+  `GET .../reports/summary`, `.../reports/export.csv`, `.../reports/export.pdf`
+  com `date_from`, `date_to` (obrigatórios, até 366 dias), `campaign_id`,
+  `advertiser_id`.
+- O relatório avisa quando o período passa da retenção de 60 dias e quando há
+  spots ainda pendentes.
+
+Limitações:
+
+- Os textos do relatório são fixos em pt-BR (não passam pela tradução).
+- Fonte Helvetica embutida: caracteres fora do Latin-1 aparecem como `?`.
+- O sistema não envia e-mail: o operador baixa e envia (decisão do cliente).
+- Tela de relatórios é da M6.
+
+Verificação (nuvem): fmt, clippy `--deny warnings`, testes de relatório (totais,
+fuso, CSV, PDF com texto extraído por `pdftotext`, paginação, logotipo, logotipo
+quebrado) e HTTP (configuração, papéis, resumo, CSV, PDF, datas inválidas,
+campanha inexistente, sem token). O PDF foi aberto e conferido visualmente.
+
+## Próximo: M6, interface (telas do módulo de comerciais)

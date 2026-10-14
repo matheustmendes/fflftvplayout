@@ -913,6 +913,52 @@ impl CommercialSettings {
     }
 }
 
+const MAX_STATION_DETAILS_LENGTH: usize = 500;
+const MAX_FOOTER_NOTE_LENGTH: usize = 300;
+
+/// How the reports sent to advertisers present the station.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, sqlx::FromRow)]
+pub struct ReportSettings {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    /// Empty means the name of the channel.
+    #[serde(default)]
+    pub station_name: String,
+    /// Address, tax id, contact: one item per line.
+    #[serde(default)]
+    pub station_details: String,
+    /// PNG or JPEG inside the channel storage; empty means no logo.
+    #[serde(default)]
+    pub logo_path: String,
+    #[serde(default)]
+    pub footer_note: String,
+}
+
+impl ReportSettings {
+    /// Check the text fields. The logo path is checked against the storage
+    /// by the caller, which knows where the storage is.
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.station_name.is_empty() {
+            validate_name("station name", &self.station_name)?;
+        }
+
+        if self.station_details.chars().count() > MAX_STATION_DETAILS_LENGTH {
+            return Err(format!(
+                "station details must not be longer than {MAX_STATION_DETAILS_LENGTH} characters"
+            ));
+        }
+
+        if self.footer_note.chars().count() > MAX_FOOTER_NOTE_LENGTH {
+            return Err(format!(
+                "footer note must not be longer than {MAX_FOOTER_NOTE_LENGTH} characters"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
 pub struct BreakWindow {
     #[sqlx(default)]

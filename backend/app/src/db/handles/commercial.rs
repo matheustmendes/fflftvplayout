@@ -2,7 +2,8 @@ use sqlx::sqlite::SqlitePool;
 
 use crate::{
     db::models::{
-        Advertiser, BreakWindow, Campaign, CommercialSettings, EligibleSpot, Spot, SpotStatus,
+        Advertiser, BreakWindow, Campaign, CommercialSettings, EligibleSpot, ReportSettings, Spot,
+        SpotStatus,
     },
     utils::errors::ProcessError,
 };
@@ -500,6 +501,51 @@ pub async fn upsert_commercial_settings(
         .bind(settings.loudness_enabled)
         .bind(settings.loudness_target_lufs)
         .bind(settings.loudness_true_peak_dbtp)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+/// The report settings of a channel, or empty ones when none were saved yet.
+pub async fn select_report_settings(
+    pool: &SqlitePool,
+    channel_id: i32,
+) -> Result<ReportSettings, ProcessError> {
+    const QUERY: &str = "SELECT * FROM report_settings WHERE channel_id = $1";
+
+    let stored: Option<ReportSettings> = sqlx::query_as(QUERY)
+        .bind(channel_id)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(stored.unwrap_or(ReportSettings {
+        channel_id,
+        ..ReportSettings::default()
+    }))
+}
+
+pub async fn upsert_report_settings(
+    pool: &SqlitePool,
+    channel_id: i32,
+    settings: &ReportSettings,
+) -> Result<(), ProcessError> {
+    const QUERY: &str = "INSERT INTO report_settings (
+            channel_id, station_name, station_details, logo_path, footer_note
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (channel_id) DO UPDATE SET
+            station_name = excluded.station_name,
+            station_details = excluded.station_details,
+            logo_path = excluded.logo_path,
+            footer_note = excluded.footer_note";
+
+    sqlx::query(QUERY)
+        .bind(channel_id)
+        .bind(&settings.station_name)
+        .bind(&settings.station_details)
+        .bind(&settings.logo_path)
+        .bind(&settings.footer_note)
         .execute(pool)
         .await?;
 

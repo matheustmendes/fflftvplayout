@@ -3,9 +3,13 @@ use std::path::PathBuf;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{
+        HeaderValue, StatusCode,
+        header::{CONTENT_DISPOSITION, CONTENT_TYPE},
+    },
+    response::{IntoResponse, Response},
 };
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Utc};
 use protect_axum::authorities::AuthDetails;
 use serde::Deserialize;
 
@@ -18,9 +22,10 @@ use crate::{
         handles::{self, AiringFilter},
         models::{
             Advertiser, AirKind, AirResult, Airing, BreakWindow, Campaign, CommercialSettings,
-            Role, Spot, WeekTemplateItem,
+            ReportSettings, Role, Spot, WeekTemplateItem,
         },
     },
+    file::norm_abs_path,
     player::controller::ChannelManager,
     utils::{
         commercial::{SpotRequest, register_spot, retry_spot, run_conversion, unique_conflict},
@@ -29,6 +34,8 @@ use crate::{
             preview_date,
         },
         errors::ServiceError,
+        report::{Report, ReportRequest, build_report, to_csv},
+        report_pdf::render_pdf,
         spot_convert::VideoTarget,
     },
 };
@@ -740,4 +747,265 @@ pub async fn apply_day_plan(
         "message": message,
         "warnings": plan.warnings,
     })))
+}
+
+/// Largest logo file accepted for the PDF report.
+const MAX_LOGO_BYTES: u64 = 2 * 1024 * 1024;
+
+/// **Report settings**
+///
+/// How the reports present the station: name, details, logo and a closing note.
+///
+/// ```BASH
+/// curl -X GET http://127.0.0.1:8787/api/commercials/1/report-settings \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_report_settings(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<ReportSettings>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    Ok(Json(
+        handles::select_report_settings(&state.pool, channel).await?,
+    ))
+}
+
+/// **Update report settings**
+///
+/// `logo_path` is a PNG or JPEG inside the channel storage, up to 2 MB.
+///
+/// ```BASH
+/// curl -X PUT http://127.0.0.1:8787/api/commercials/1/report-settings -H 'Content-Type: application/json' \
+/// -d '{ "station_name": "TV Exemplo", "station_details": "Rua das Flores, 100\nCNPJ 00.000.000/0001-00",
+///       "logo_path": "branding/logo.png", "footer_note": "Documento sem valor fiscal." }' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn update_report_settings(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+    Json(mut data): Json<ReportSettings>,
+) -> Result<Json<ReportSettings>, ServiceError> {
+    ensure_manager(&user, &details, channel)?;
+    data.validate().map_err(ServiceError::BadRequest)?;
+    data.channel_id = channel;
+
+    if data.logo_path.trim().is_empty() {
+        data.logo_path = String::new();
+    } else {
+        let manager = channel_manager(&state, channel).await?;
+        let storage = manager.config.read().await.channel.storage.clone();
+        let (file, _, relative) = norm_abs_path(&storage, &data.logo_path)?;
+        let extension = file
+            .extension()
+            .map(|extension| extension.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
+
+        if !matches!(extension.as_str(), "png" | "jpg" | "jpeg") {
+            return Err(ServiceError::BadRequest(
+                "the logo must be a PNG or JPEG file".to_string(),
+            ));
+        }
+
+        let size = tokio::fs::metadata(&file)
+            .await
+            .map_err(|_| {
+                ServiceError::BadRequest(format!(
+                    "file {relative:?} does not exist in the channel storage"
+                ))
+            })?
+            .len();
+
+        if size > MAX_LOGO_BYTES {
+            return Err(ServiceError::BadRequest(
+                "the logo must not be larger than 2 MB".to_string(),
+            ));
+        }
+
+        data.logo_path = relative;
+    }
+
+    handles::upsert_report_settings(&state.pool, channel, &data).await?;
+
+    Ok(Json(data))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReportQuery {
+    /// First playlist date, `YYYY-MM-DD`.
+    pub date_from: String,
+    /// Last playlist date, `YYYY-MM-DD`.
+    pub date_to: String,
+    #[serde(default)]
+    pub campaign_id: Option<i32>,
+    #[serde(default)]
+    pub advertiser_id: Option<i32>,
+}
+
+async fn load_report(
+    state: &AppState,
+    channel: i32,
+    query: &ReportQuery,
+) -> Result<(Report, PathBuf), ServiceError> {
+    let request = ReportRequest {
+        channel_id: channel,
+        campaign_id: query.campaign_id,
+        advertiser_id: query.advertiser_id,
+        date_from: parse_date(&query.date_from)?,
+        date_to: parse_date(&query.date_to)?,
+    };
+    let manager = channel_manager(state, channel).await?;
+    let storage = manager.config.read().await.channel.storage.clone();
+    let (name, timezone) = {
+        let channel = manager.channel.lock().await;
+
+        (
+            channel.name.clone(),
+            channel.timezone.unwrap_or(chrono_tz::Tz::UTC),
+        )
+    };
+    let report = build_report(&state.pool, &request, &name, timezone, Utc::now()).await?;
+
+    Ok((report, storage))
+}
+
+/// A file name that is safe in a header: ASCII letters and digits only.
+fn report_file_name(report: &Report, extension: &str) -> String {
+    let subject = report
+        .header
+        .campaign
+        .as_deref()
+        .or(report.header.advertiser.as_deref())
+        .unwrap_or("todos");
+    let slug: String = subject
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let slug = slug
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    format!(
+        "veiculacao-{slug}-{}-{}.{extension}",
+        report.header.date_from, report.header.date_to
+    )
+}
+
+fn download(content_type: &'static str, file_name: &str, body: Vec<u8>) -> Response {
+    let disposition = HeaderValue::from_str(&format!("attachment; filename=\"{file_name}\""))
+        .unwrap_or_else(|_| HeaderValue::from_static("attachment"));
+
+    (
+        [
+            (CONTENT_TYPE, HeaderValue::from_static(content_type)),
+            (CONTENT_DISPOSITION, disposition),
+        ],
+        body,
+    )
+        .into_response()
+}
+
+/// **Report summary**
+///
+/// What the plan promised against what aired in a period, as JSON. Filter by
+/// `campaign_id` or `advertiser_id`; a report covers at most 366 days.
+///
+/// ```BASH
+/// curl -X GET 'http://127.0.0.1:8787/api/commercials/1/reports/summary?date_from=2026-12-01&date_to=2026-12-31&campaign_id=5' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_report_summary(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    Query(query): Query<ReportQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<Report>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    Ok(Json(load_report(&state, channel, &query).await?.0))
+}
+
+/// **Report as CSV**
+///
+/// UTF-8 with a byte order mark and `;` as separator, ready for a spreadsheet
+/// in Brazilian Portuguese.
+///
+/// ```BASH
+/// curl -X GET 'http://127.0.0.1:8787/api/commercials/1/reports/export.csv?date_from=2026-12-01&date_to=2026-12-31' \
+/// -H 'Authorization: Bearer <TOKEN>' -o report.csv
+/// ```
+pub async fn export_report_csv(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    Query(query): Query<ReportQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Response, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    let (report, _) = load_report(&state, channel, &query).await?;
+
+    Ok(download(
+        "text/csv; charset=utf-8",
+        &report_file_name(&report, "csv"),
+        to_csv(&report),
+    ))
+}
+
+/// **Report as PDF**
+///
+/// The report with the logo and details of the station, ready to send to the
+/// advertiser.
+///
+/// ```BASH
+/// curl -X GET 'http://127.0.0.1:8787/api/commercials/1/reports/export.pdf?date_from=2026-12-01&date_to=2026-12-31' \
+/// -H 'Authorization: Bearer <TOKEN>' -o report.pdf
+/// ```
+pub async fn export_report_pdf(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    Query(query): Query<ReportQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Response, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    let (report, storage) = load_report(&state, channel, &query).await?;
+    let logo = read_logo(&storage, &report.header.logo_path).await;
+    let file_name = report_file_name(&report, "pdf");
+    let bytes = tokio::task::spawn_blocking(move || render_pdf(&report, logo.as_deref()))
+        .await
+        .map_err(|_| ServiceError::InternalServerError)??;
+
+    Ok(download("application/pdf", &file_name, bytes))
+}
+
+/// The logo bytes, or `None` when there is no usable logo: a report without
+/// the logo is better than no report.
+async fn read_logo(storage: &std::path::Path, logo_path: &str) -> Option<Vec<u8>> {
+    if logo_path.is_empty() {
+        return None;
+    }
+
+    let (file, _, _) = norm_abs_path(storage, logo_path).ok()?;
+    let size = tokio::fs::metadata(&file).await.ok()?.len();
+
+    if size > MAX_LOGO_BYTES {
+        return None;
+    }
+
+    tokio::fs::read(&file).await.ok()
 }
