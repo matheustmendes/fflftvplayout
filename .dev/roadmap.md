@@ -117,7 +117,12 @@ horário e o EPG continuam valendo, e o engine não muda.
 
 ### Fase 2: grade e comerciais
 - 2.1 Grade-modelo por dia da semana.
-- 2.2 Horário fixo para programas (item "entra às HH:MM").
+- 2.2 Horário fixo para programas (item "entra às HH:MM"). **Em espera
+  (decisão do usuário).** Quando for feito, é **opcional por programa**: o
+  operador decide se um programa entra em hora marcada; a grade se readequa
+  quando for possível (ajustando o enchimento e os intervalos) e, quando não for,
+  **sinaliza os conflitos** que isso causa (por exemplo, o programa anterior
+  passa do horário) em vez de esconder ou quebrar a grade.
 - 2.3 Módulo de comerciais (seção 3), com ingestão MXF.
 - 2.4 Registro do que foi ao ar (as-run) e relatório por anunciante.
 
