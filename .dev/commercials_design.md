@@ -42,6 +42,15 @@ Janelas de intervalo ─┴─────────────────�
 
 ## 3. Dados (migration `00006_commercials.sql`)
 
+> **Estado (M1 implementada):** a migration `00006` cria `advertiser`,
+> `campaign`, `spot` e `break_window`. As tabelas `week_template_item` e
+> `airlog` ficam para migrations próprias (`00007`, `00008`), junto das etapas
+> que as usam (M3 e M4), para o esquema ser decidido com o código em mãos.
+> `spot` ganhou o campo `active` (arquivamento) e `channel_id` próprio, que
+> facilita o isolamento por canal; a consistência canal/campanha é garantida
+> nas queries de inserção.
+
+
 A última migration existente é a `00005` [verificado]; não editar as
 anteriores. Todas as tabelas levam `channel_id` (o projeto suporta vários
 canais).
@@ -269,6 +278,9 @@ termos técnicos (FFmpeg, probe, codec) na tela do operador. Novas telas em
 `frontend/src/views/` e `components/`, rota em `frontend/src/router/index.ts`.
 
 ## 10. Plano de implementação
+
+**Andamento:** M1 concluída (ver `.dev/commercials_progress.md`).
+
 
 Cada etapa é entregável e testável por si; as quatro primeiras podem ser
 validadas na nuvem com `cargo fmt`, `clippy` e `cargo test`.

@@ -37,6 +37,32 @@ pub fn routes() -> Router<AppState> {
                 .route("/control/{id}/process", post(process_control))
                 .route("/file/{id}/browse", post(file_browser))
                 .route("/file/{id}/create-folder", post(add_dir))
+                .route(
+                    "/commercials/{id}/advertisers",
+                    get(get_advertisers).post(add_advertiser),
+                )
+                .route(
+                    "/commercials/{id}/advertisers/{advertiser}",
+                    put(edit_advertiser).delete(remove_advertiser),
+                )
+                .route(
+                    "/commercials/{id}/campaigns",
+                    get(get_campaigns).post(add_campaign),
+                )
+                .route(
+                    "/commercials/{id}/campaigns/{campaign}",
+                    put(edit_campaign).delete(remove_campaign),
+                )
+                .route("/commercials/{id}/spots", get(get_spots).post(add_spot))
+                .route("/commercials/{id}/spots/{spot}", delete(remove_spot))
+                .route(
+                    "/commercials/{id}/break-windows",
+                    get(get_break_windows).post(add_break_window),
+                )
+                .route(
+                    "/commercials/{id}/break-windows/{window}",
+                    put(edit_break_window).delete(remove_break_window),
+                )
                 .route("/file/{id}/rename", post(move_rename))
                 .route("/file/{id}/remove", post(remove))
                 .route(

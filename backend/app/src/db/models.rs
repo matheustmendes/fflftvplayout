@@ -673,7 +673,7 @@ const fn active_by_default() -> bool {
     true
 }
 
-fn validate_name(label: &str, name: &str) -> Result<(), String> {
+pub(crate) fn validate_name(label: &str, name: &str) -> Result<(), String> {
     if name.trim().is_empty() {
         return Err(format!("{label} must not be empty"));
     }
