@@ -1036,6 +1036,96 @@ pub struct EligibleSpot {
     pub advertiser_name: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum AirKind {
+    #[default]
+    Spot,
+    Live,
+}
+
+/// How a planned or airing spot ended. Only `Played` counts as aired in the
+/// reports: `Partial` is a spot that was cut short.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum AirResult {
+    /// Planned and not yet due.
+    #[default]
+    Pending,
+    /// On the air right now.
+    Airing,
+    Played,
+    Partial,
+    /// The operator skipped it.
+    Skipped,
+    /// The playout stopped while it was on the air.
+    Interrupted,
+    /// The file failed and the playout aired the filler instead.
+    Fallback,
+    Failed,
+    /// Planned, due, and never started.
+    NotAired,
+    /// Planned, but a live broadcast was on the air at its time.
+    LiveMissed,
+}
+
+/// One row of the airing log.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct Airing {
+    pub id: i32,
+    pub channel_id: i32,
+    pub air_date: String,
+    pub kind: AirKind,
+    pub spot_id: Option<i32>,
+    pub campaign_id: Option<i32>,
+    pub advertiser_id: Option<i32>,
+    pub advertiser_name: String,
+    pub campaign_name: String,
+    pub spot_title: String,
+    pub file_path: String,
+    pub break_window_id: Option<i32>,
+    pub position_in_break: Option<i32>,
+    pub planned_begin_sec: Option<f64>,
+    pub planned_start: Option<String>,
+    pub planned_duration_sec: Option<f64>,
+    pub actual_start: Option<String>,
+    pub actual_end: Option<String>,
+    pub actual_duration_sec: Option<f64>,
+    pub result: AirResult,
+    pub reason: String,
+    pub created_at: String,
+}
+
+/// A spot the planner put in a day, to be recorded as pending.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlannedAiring {
+    pub spot_id: i32,
+    pub campaign_id: i32,
+    pub advertiser_id: i32,
+    pub advertiser_name: String,
+    pub campaign_name: String,
+    pub spot_title: String,
+    pub file_path: String,
+    pub break_window_id: Option<i32>,
+    pub position_in_break: Option<i32>,
+    pub planned_begin_sec: f64,
+    pub planned_start: Option<String>,
+    pub planned_duration_sec: f64,
+}
+
+/// Who a spot file belongs to, copied into the log when it airs.
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
+pub struct SpotIdentity {
+    pub spot_id: i32,
+    pub campaign_id: i32,
+    pub advertiser_id: i32,
+    pub advertiser_name: String,
+    pub campaign_name: String,
+    pub spot_title: String,
+}
+
 #[cfg(test)]
 mod commercial_tests {
     use super::*;
@@ -1214,6 +1304,24 @@ mod commercial_tests {
 
         item.max_per_day = Some(3);
         assert!(item.validate().is_ok());
+    }
+
+    #[test]
+    fn air_results_use_their_snake_case_names() {
+        for (result, name) in [
+            (AirResult::Pending, "pending"),
+            (AirResult::NotAired, "not_aired"),
+            (AirResult::LiveMissed, "live_missed"),
+            (AirResult::Played, "played"),
+        ] {
+            assert_eq!(serde_json::to_value(result).unwrap(), name);
+            assert_eq!(
+                serde_json::from_value::<AirResult>(serde_json::json!(name)).unwrap(),
+                result
+            );
+        }
+
+        assert_eq!(serde_json::to_value(AirKind::Live).unwrap(), "live");
     }
 
     #[test]
