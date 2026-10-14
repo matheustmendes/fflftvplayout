@@ -38,8 +38,8 @@ interação, **100% amigável para quem não entende de TV nem de informática**
 | 3.2 | Navegação nova + estado do canal (NO AR / PARADO / REINICIANDO / AO VIVO) sempre visível | feito |
 | 3.3 | Painel inicial: estado, agora e próximo, cobertura de 14 dias, avisos, primeiros passos | feito |
 | 3.4 | Player renomeado "No ar": botões com texto e confirmação | feito |
-| 3.5 | Ajustes: simples por padrão, avançado escondido | |
-| 3.6 | Arquivos, Texto na tela, Histórico, Login e Primeiro acesso | |
+| 3.5 | Ajustes: simples por padrão, avançado escondido | feito |
+| 3.6 | Arquivos, Texto na tela, Histórico, Login e Primeiro acesso | feito |
 | 3.7 | Editor visual da grade (arrastar e soltar) com validação em linguagem simples | feito |
 | 3.8 | Operador: menu e ações reduzidas | feito |
 
@@ -78,3 +78,27 @@ avançadas" (`ui.advancedShow`), fechado por padrão, com `ui.advancedHelp`.
 **Verificação:** `npx vue-tsc --build`, `npx eslint frontend/src --config
 frontend/eslint.config.ts`, `npx prettier --check`, `npx vite build` e conferir as
 telas em 1280 px e 390 px, nos temas claro e escuro.
+
+## Estado (fim da implementação na nuvem)
+
+Todas as entregas 3.1 a 3.8 foram feitas e conferidas no navegador (Chromium
+headless contra o backend real com dados de teste, 1280 px e 390 px, temas claro e
+escuro, administrador e operador), sem erro de console nem resposta de erro. As
+checagens `vue-tsc`, ESLint, Prettier e `vite build` passam limpas.
+
+**Não foi testado** (precisa de uma pessoa e de ambiente real): o teste de uso com
+um operador de verdade (`.dev/acceptance/F3.md`), o modal de reinício ao salvar
+configurações que o exigem, criar e apagar canal e usuário, saídas RTMP/SRT e modo
+desktop nos Ajustes, o fluxo real de verificação por e-mail, o primeiro acesso de
+verdade, a aparência do texto na tela na TV, e alemão e russo (caem para o inglês).
+
+**Pendências conhecidas:**
+- O tamanho dos arquivos já enviados não aparece em Arquivos (a API não o devolve).
+- "Substituir arquivo" apaga o antigo antes de enviar o novo (o servidor recusa nome
+  repetido); se o envio falhar, o antigo já se foi.
+- Cores do log do servidor (Histórico) têm contraste fraco em algumas linhas no tema
+  claro.
+- O semáforo mostra um estado por canal; não há luz por destino (o relay não
+  informa quem está conectado ao app).
+- Detalhe dos avisos do planejador e mensagens de erro do servidor continuam em
+  inglês depois da frase em português.
