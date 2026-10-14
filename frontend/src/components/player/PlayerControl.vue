@@ -6,17 +6,18 @@ import timezone from 'dayjs/plugin/timezone.js'
 import utc from 'dayjs/plugin/utc.js'
 import mpegts from 'mpegts.js'
 
-import { computed, ref, onMounted, onBeforeUnmount, watch, useTemplateRef } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { throttle } from 'es-toolkit/function'
 import { storeToRefs } from 'pinia'
-import { useEventSource, useElementSize } from '@vueuse/core'
+import { useEventSource } from '@vueuse/core'
 
 import { authFetch } from '@/composables/authFetch'
 import { stringFormatter } from '@/composables/helper'
 import { useAuth } from '@/stores/auth'
 import { useIndex } from '@/stores/index'
 import { useConfig } from '@/stores/config'
+import { useLive } from '@/stores/live'
 import { usePlaylist } from '@/stores/playlist'
 
 import 'dayjs/locale/de'
@@ -30,6 +31,8 @@ dayjs.extend(LocalizedFormat)
 dayjs.extend(timezone)
 dayjs.extend(utc)
 
+import ConfirmModal from '@/components/ui/ConfirmModal.vue'
+import StatusPill from '@/components/ui/StatusPill.vue'
 import VideoPlayer from '@/components/utils/VideoPlayer.vue'
 
 const { t } = useI18n()
@@ -37,6 +40,7 @@ const authStore = useAuth()
 const configStore = useConfig()
 const indexStore = useIndex()
 const playlistStore = usePlaylist()
+const live = useLive()
 const { filename, secToHMS } = stringFormatter()
 const { i } = storeToRefs(useConfig())
 
@@ -55,8 +59,6 @@ playlistStore.current = currentDefault
 const timeStr = ref('00:00:00')
 const timer = ref()
 const errorCounter = ref(0)
-const controlsUnlocked = ref(false)
-const lastReportedRunning = ref<boolean | null>(null)
 const volumeLevel = ref(configStore.playout.audio?.volume ?? 1)
 const streamExtension = ref(configStore.channels[configStore.i]?.preview_url.split('.').pop())
 const httpStreamFlv = ref(null)
@@ -69,8 +71,6 @@ const mpegtsOptions = ref({
     lazyLoadMaxDuration: 3 * 60,
     liveBufferLatencyChasing: true,
 })
-const timeDiv = useTemplateRef('timeDiv')
-const { width } = useElementSize(timeDiv)
 
 const streamUrl = ref(`/data/event/${configStore.channels[configStore.i]?.id}?endpoint=playout&uuid=${authStore.uuid}`)
 
@@ -85,67 +85,6 @@ const activeIngestLabel = computed(() => {
 
     return `${t('control.ingest')}: ${details}`
 })
-
-type PlayerControlButton = {
-    label: string
-    icon: string
-    class: string
-    command: string
-    target: 'process' | 'playout'
-    showRunning?: boolean
-}
-
-const playerControlColumns: PlayerControlButton[][] = [
-    [
-        {
-            label: 'control.start',
-            icon: 'bi-play',
-            class: 'text-7xl text-lime-600',
-            command: 'start',
-            target: 'process',
-            showRunning: true,
-        },
-        {
-            label: 'control.last',
-            icon: 'bi-skip-start',
-            class: 'text-7xl text-cyan-600',
-            command: 'back',
-            target: 'playout',
-        },
-    ],
-    [
-        {
-            label: 'control.stop',
-            icon: 'bi-stop',
-            class: 'text-7xl text-red-600',
-            command: 'stop',
-            target: 'process',
-        },
-        {
-            label: 'control.reset',
-            icon: 'bi-arrow-repeat',
-            class: 'text-6xl text-cyan-600',
-            command: 'reset',
-            target: 'playout',
-        },
-    ],
-    [
-        {
-            label: 'control.restart',
-            icon: 'bi-arrow-clockwise',
-            class: 'text-6xl text-yellow-500',
-            command: 'restart',
-            target: 'process',
-        },
-        {
-            label: 'control.next',
-            icon: 'bi-skip-end',
-            class: 'text-7xl text-cyan-600',
-            command: 'next',
-            target: 'playout',
-        },
-    ],
-]
 
 // 'http://127.0.0.1:8787/data/event/1?endpoint=playout&uuid=f2f8c29b-712a-48c5-8919-b535d3a05a3a'
 const { status, data, error, close } = useEventSource(streamUrl, [], {
@@ -209,19 +148,15 @@ watch([data], () => {
         try {
             const playout_status = JSON.parse(data.value)
             playlistStore.setStatus(playout_status)
-            updateControlsForStatus(true)
         } catch {
             indexStore.sseConnected = true
             playlistStore.playoutIsRunning = false
             resetStatus()
-            updateControlsForStatus(false)
         }
     }
 })
 
 watch([i], () => {
-    controlsUnlocked.value = false
-    lastReportedRunning.value = null
     resetStatus()
     volumeLevel.value = configStore.playout.audio?.volume ?? 1
 
@@ -265,8 +200,6 @@ function volumeIcon() {
 }
 
 const applyVolumeControl = throttle(async () => {
-    if (!controlsUnlocked.value) return
-
     const volume = Math.min(1.5, Math.max(0, Number(volumeLevel.value) || 0))
     volumeLevel.value = volume
     configStore.playout.audio.volume = volume
@@ -279,8 +212,6 @@ const applyVolumeControl = throttle(async () => {
 }, 250)
 
 function muteAudio() {
-    if (!controlsUnlocked.value) return
-
     if (configStore.playout.audio.volume === 0) {
         volumeLevel.value = 1
     } else {
@@ -310,17 +241,7 @@ function resetStatus() {
     playlistStore.current = currentDefault
 }
 
-function updateControlsForStatus(running: boolean) {
-    if (lastReportedRunning.value !== running) {
-        controlsUnlocked.value = !running
-    }
-
-    lastReportedRunning.value = running
-}
-
 const controlProcess = throttle(async (state: string) => {
-    if (!controlsUnlocked.value) return
-
     /*
         Control playout (start, stop, restart)
     */
@@ -341,8 +262,6 @@ const controlProcess = throttle(async (state: string) => {
 }, 2000)
 
 const controlPlayout = throttle(async (state: string) => {
-    if (!controlsUnlocked.value) return
-
     /*
         Control playout:
         - jump to next clip
@@ -367,233 +286,218 @@ const controlPlayout = throttle(async (state: string) => {
         })
 }, 1000)
 
-function runControl(button: PlayerControlButton) {
-    if (!controlsUnlocked.value) return
+type Action = 'start' | 'stop' | 'restart' | 'next' | 'back' | 'reset'
 
-    if (button.target === 'process') {
-        controlProcess(button.command)
+const asking = ref<Action | null>(null)
+const canManage = computed(() => authStore.role !== 'user')
+const isRunning = computed(() => live.state === 'on_air' || live.state === 'live')
+const currentTitle = computed(() => {
+    const current = playlistStore.current
+
+    return current.title || filename(current.source) || t('player2.filler')
+})
+const nextItem = computed(() => playlistStore.playlist[playlistStore.currentIndex + 1])
+const nextTitle = computed(() => {
+    const item = nextItem.value
+
+    return item ? item.title || filename(item.source) : ''
+})
+const pillKind = computed(
+    () => ({ on_air: 'ok', live: 'live', restarting: 'warn', stopped: 'bad', offline: 'idle' })[live.state] as never,
+)
+
+/** Starting is harmless; everything that interrupts what is on the air asks first. */
+function ask(action: Action) {
+    if (action === 'start') {
+        void controlProcess('start')
     } else {
-        controlPlayout(button.command)
+        asking.value = action
+    }
+}
+
+function answer(confirmed: boolean) {
+    const action = asking.value
+
+    asking.value = null
+
+    if (!confirmed || !action) {
+        return
+    }
+
+    if (action === 'stop' || action === 'restart') {
+        void controlProcess(action)
+    } else {
+        void controlPlayout(action)
     }
 }
 </script>
 <template>
-    <div class="w-full">
-        <div
-            class="grid grid-cols-[48px_auto] md:grid-cols-[auto_50px_360px] lg:grid-cols-[auto_50px_510px] xl:grid-cols-[512px_auto_48px_450px]"
-        >
-            <div class="order-1 col-span-2 md:col-span-1 p-1">
-                <div class="bg-base-100 w-full h-full rounded-sm shadow-sm flex items-center p-2">
-                    <div class="w-full aspect-video">
-                        <video v-if="streamExtension === 'flv'" ref="httpStreamFlv" controls />
-                        <VideoPlayer
-                            v-else-if="configStore.showPlayer && configStore.channels[configStore.i]"
-                            :key="configStore.i"
-                            class="live-player"
-                            reference="httpStream"
-                            :options="{
-                                liveui: true,
-                                controls: true,
-                                suppressNotSupportedError: true,
-                                autoplay: false,
-                                preload: 'auto',
-                                sources: [
-                                    {
-                                        type: 'application/x-mpegURL',
-                                        src: configStore.channels[configStore.i]?.preview_url,
-                                    },
-                                ],
-                            }"
-                        />
-                    </div>
+    <div class="w-full p-3">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(320px,540px)_1fr]">
+            <!-- Imagem do canal -->
+            <section class="card bg-base-100 shadow p-3 min-w-0">
+                <div class="flex items-center gap-2 mb-2">
+                    <h2 class="font-bold grow">{{ t('player2.preview') }}</h2>
+                    <StatusPill :kind="pillKind" :label="t(`live.${live.state}`)" />
                 </div>
-            </div>
-
-            <div
-                class="order-2 md:order-4 xl:order-2 col-span-2 md:col-span-3 xl:col-span-1 bg-base-200 h-full grid grid-cols-1 xs:grid-cols-2"
-            >
-                <div class="col-span-1 p-1">
-                    <div
-                        ref="timeDiv"
-                        class="w-full h-full bg-base-100 rounded-sm font-['DigitalNumbers'] p-6 tracking-tighter flex justify-center items-center shadow"
-                        :style="{ 'font-size': `${width / 6}px` }"
-                    >
-                        {{ timeStr }}
-                    </div>
+                <div class="w-full aspect-video bg-black rounded-lg overflow-hidden">
+                    <video v-if="streamExtension === 'flv'" ref="httpStreamFlv" class="w-full h-full" controls />
+                    <VideoPlayer
+                        v-else-if="configStore.showPlayer && configStore.channels[configStore.i]"
+                        :key="configStore.i"
+                        class="live-player"
+                        reference="httpStream"
+                        :options="{
+                            liveui: true,
+                            controls: true,
+                            suppressNotSupportedError: true,
+                            autoplay: false,
+                            preload: 'auto',
+                            sources: [
+                                {
+                                    type: 'application/x-mpegURL',
+                                    src: configStore.channels[configStore.i]?.preview_url,
+                                },
+                            ],
+                        }"
+                    />
                 </div>
+                <p class="mt-2 text-xs opacity-60">{{ t('player2.previewHelp') }}</p>
+            </section>
 
-                <div class="col-span-1 p-1 min-h-[50%]">
-                    <div
-                        class="w-full h-full bg-base-100 rounded-sm font-['DigitalNumbers'] p-6 text-3xl md:text-2xl 2xl:text-5xl 3xl:text-7xl tracking-tighter flex justify-center items-center shadow"
-                        :style="{ 'font-size': `${width / 6}px` }"
-                    >
-                        {{ secToHMS(timeRemaining()) }}
-                    </div>
-                </div>
-
-                <div class="col-span-1 xs:col-span-2 p-1">
-                    <div class="w-full h-full bg-base-100 rounded-sm flex items-center px-3 py-2 xl:py-1 shadow">
-                        <div class="w-full h-full flex flex-col content-center">
-                            <div
-                                v-if="playlistStore.ingestRuns"
-                                class="h-1/4 font-bold truncate content-center leading-5"
-                                :title="activeIngestLabel"
-                            >
-                                {{ activeIngestLabel }}
-                            </div>
-                            <div
-                                v-else
-                                class="h-1/4 font-bold text truncate content-center leading-5"
-                                :class="{
-                                    'text-base-content/60': playlistStore.current.ad,
-                                }"
-                                :title="playlistStore.current.title || filename(playlistStore.current.source)"
-                            >
-                                {{
-                                    playlistStore.current.title ||
-                                    filename(playlistStore.current.source) ||
-                                    t('control.noClip')
-                                }}
-                            </div>
-                            <div class="h-1/4 content-center leading-5 text-sm md:text-base">
-                                <strong> {{ t('player.duration') }}: </strong>
-                                {{ secToHMS(playlistStore.current.duration) }} |
-                                <strong> {{ t('player.in') }}: </strong>
-                                {{ secToHMS(playlistStore.current.in) }} |
-                                <strong> {{ t('player.out') }}: </strong>
-                                {{ secToHMS(playlistStore.current.out) }}
-
-                                <template v-if="playlistStore.shift !== 0">
-                                    | <strong>{{ t('player.shift') }}:</strong>
-                                    {{ secToHMS(playlistStore.shift) }}
-                                </template>
-                            </div>
-                            <div class="h-1/4 content-center leading-5 text-sm md:text-base">
-                                <strong> {{ t('player.total') }}: </strong>
-                                {{
-                                    secToHMS(
-                                        playlistStore.playlist.reduce(
-                                            (total, { in: seek, out }) => total + (out - seek),
-                                            0,
-                                        ),
-                                    )
-                                }}
-                            </div>
-                            <div class="h-1/4 content-center">
-                                <progress
-                                    class="progress progress-accent w-full"
-                                    :value="
-                                        playlistStore.progressValue && playlistStore.progressValue <= 100
-                                            ? playlistStore.progressValue
-                                            : 0
-                                    "
-                                    max="100"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="order-3 md:order-2 xl:order-3 p-1">
-                <div class="bg-base-100 h-full min-h-24 rounded-sm shadow flex items-center justify-center px-3 py-2">
-                    <div
-                        class="relative h-full min-h-20 w-4 rounded-sm overflow-hidden bg-linear-to-t from-success from-70% via-warning via-80% to-error to-100%"
-                    >
+            <!-- Agora no ar e controles -->
+            <section class="card bg-base-100 shadow p-4 flex flex-col gap-4 min-w-0">
+                <div class="flex items-start gap-3">
+                    <div class="min-w-0 grow">
+                        <div class="text-sm uppercase tracking-wide opacity-60">{{ t('player2.nowPlaying') }}</div>
                         <div
-                            class="absolute top-0 left-0 w-full bg-base-300 transition-[height] duration-300"
-                            :style="{ height: `${100 - audioMeterValue()}%` }"
-                        />
-                    </div>
-                </div>
-            </div>
-
-            <div class="order-3 xl:order-4 p-1">
-                <div class="bg-base-100 h-full flex flex-col justify-center rounded-sm shadow">
-                    <div class="w-full flex-1 min-h-0 grid grid-cols-3">
-                        <div
-                            v-for="(column, columnIndex) in playerControlColumns"
-                            :key="columnIndex"
-                            class="text-center h-full"
+                            v-if="playlistStore.ingestRuns"
+                            class="text-2xl font-bold truncate"
+                            :title="activeIngestLabel"
                         >
-                            <div
-                                v-for="button in column"
-                                :key="button.command"
-                                class="w-full h-1/2 p-2"
-                                :title="
-                                    !controlsUnlocked
-                                        ? t('control.controlsLocked')
-                                        : button.target === 'playout' && playlistStore.ingestRuns
-                                          ? t('control.navigationDisabledLive')
-                                          : t(button.label)
-                                "
-                            >
-                                <button
-                                    :aria-label="t(button.label)"
-                                    :disabled="
-                                        !controlsUnlocked || (button.target === 'playout' && playlistStore.ingestRuns)
-                                    "
-                                    class="btn btn-primary h-full w-full"
-                                    :class="[
-                                        button.class,
-                                        button.showRunning &&
-                                            playlistStore.playoutIsRunning &&
-                                            'shadow-glow shadow-lime-600',
-                                    ]"
-                                    @click="runControl(button)"
-                                >
-                                    <i
-                                        :class="[
-                                            button.icon,
-                                            (!controlsUnlocked ||
-                                                (button.target === 'playout' && playlistStore.ingestRuns)) &&
-                                                'opacity-40',
-                                        ]"
-                                    />
-                                </button>
-                            </div>
+                            <i class="bi bi-broadcast text-purple-500" /> {{ activeIngestLabel }}
+                        </div>
+                        <div
+                            v-else
+                            class="text-2xl font-bold truncate"
+                            :class="!isRunning && 'opacity-50'"
+                            :title="currentTitle"
+                        >
+                            {{ isRunning ? currentTitle : t('player2.nothing') }}
                         </div>
                     </div>
-                    <div class="w-full px-2 pb-3" :title="!controlsUnlocked ? t('control.controlsLocked') : undefined">
-                        <div class="flex items-center gap-2">
-                            <button
-                                type="button"
-                                class="btn btn-ghost btn-xs flex items-center justify-center px-1 text-base"
-                                :class="controlsUnlocked && 'text-warning'"
-                                :title="t(controlsUnlocked ? 'control.lockControls' : 'control.unlockControls')"
-                                :aria-label="t(controlsUnlocked ? 'control.lockControls' : 'control.unlockControls')"
-                                :aria-pressed="controlsUnlocked"
-                                @click="controlsUnlocked = !controlsUnlocked"
-                            >
-                                <i
-                                    class="block leading-none before:align-baseline"
-                                    :class="controlsUnlocked ? 'bi-unlock' : 'bi-lock'"
-                                    aria-hidden="true"
-                                />
-                            </button>
-                            <span class="h-6 w-px shrink-0 bg-base-content/30" aria-hidden="true" />
-                            <button
-                                class="btn btn-sm px-1 btn-primary text-xl text-base-content/70"
-                                :disabled="!controlsUnlocked"
-                                @click="muteAudio"
-                            >
-                                <i :class="[volumeIcon(), !controlsUnlocked && 'opacity-40']" />
-                            </button>
+                    <div class="text-right shrink-0">
+                        <div class="text-xs uppercase tracking-wide opacity-60">{{ t('player2.clock') }}</div>
+                        <div class="text-2xl font-['DigitalNumbers'] tracking-tighter">{{ timeStr }}</div>
+                    </div>
+                </div>
+
+                <div>
+                    <progress
+                        class="progress progress-primary w-full h-3"
+                        :value="
+                            playlistStore.progressValue && playlistStore.progressValue <= 100
+                                ? playlistStore.progressValue
+                                : 0
+                        "
+                        max="100"
+                    />
+                    <div class="mt-1 flex flex-wrap justify-between gap-x-4 text-sm opacity-80">
+                        <span>{{ t('player2.left', { time: secToHMS(timeRemaining()) }) }}</span>
+                        <span v-if="nextTitle" class="truncate">{{ t('player2.next', { title: nextTitle }) }}</span>
+                        <span v-if="Math.abs(playlistStore.shift) > 2" class="text-warning">
+                            <i class="bi bi-clock-history" />
+                            {{ t('player2.shift', { s: Math.round(playlistStore.shift) }) }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Botões grandes, com texto -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button v-if="!isRunning" class="btn btn-primary btn-lg col-span-2" @click="ask('start')">
+                        <i class="bi bi-play-fill text-3xl" /> {{ t('player2.start') }}
+                    </button>
+                    <template v-else>
+                        <button
+                            class="btn btn-primary btn-lg"
+                            :disabled="playlistStore.ingestRuns"
+                            :title="playlistStore.ingestRuns ? t('control.navigationDisabledLive') : undefined"
+                            @click="ask('next')"
+                        >
+                            <i class="bi bi-skip-forward-fill text-2xl" /> {{ t('player2.next_btn') }}
+                        </button>
+                        <button
+                            class="btn btn-lg"
+                            :disabled="playlistStore.ingestRuns"
+                            :title="playlistStore.ingestRuns ? t('control.navigationDisabledLive') : undefined"
+                            @click="ask('back')"
+                        >
+                            <i class="bi bi-skip-backward-fill text-2xl" /> {{ t('player2.back_btn') }}
+                        </button>
+                    </template>
+                    <template v-if="canManage">
+                        <button class="btn" @click="ask('restart')">
+                            <i class="bi bi-arrow-clockwise" /> {{ t('player2.restart') }}
+                        </button>
+                        <button class="btn btn-error btn-outline" @click="ask('stop')">
+                            <i class="bi bi-stop-fill" /> {{ t('player2.stop') }}
+                        </button>
+                    </template>
+                </div>
+
+                <!-- Volume e nível do áudio -->
+                <div>
+                    <div class="flex items-center gap-3">
+                        <button class="btn btn-sm btn-circle text-xl" :title="t('player2.mute')" @click="muteAudio">
+                            <i :class="volumeIcon()" />
+                        </button>
+                        <div class="grow">
+                            <div class="text-sm opacity-70">{{ t('player2.volume') }}</div>
                             <input
                                 v-model.number="volumeLevel"
                                 type="range"
                                 min="0"
                                 max="1.5"
                                 step="0.01"
-                                class="range range-primary range-sm flex-1 bg-base-300"
-                                :disabled="!controlsUnlocked"
+                                class="range range-primary range-sm w-full"
                                 @input="applyVolumeControl"
                             />
-                            <span class="w-7 text-right text-xs tabular-nums">{{ volumeLevel.toFixed(2) }}</span>
+                        </div>
+                        <span class="w-12 text-right tabular-nums">{{ Math.round(volumeLevel * 100) }}%</span>
+                    </div>
+                    <div class="mt-2">
+                        <div class="text-xs opacity-60 mb-1">{{ t('player2.level') }}</div>
+                        <div
+                            class="relative h-2 w-full rounded-full overflow-hidden bg-linear-to-r from-success from-70% via-warning via-85% to-error to-100%"
+                        >
+                            <div
+                                class="absolute top-0 right-0 h-full bg-base-300 transition-[width] duration-300"
+                                :style="{ width: `${100 - audioMeterValue()}%` }"
+                            />
                         </div>
                     </div>
                 </div>
-            </div>
+
+                <details v-if="canManage" class="text-sm">
+                    <summary class="cursor-pointer opacity-70">{{ t('player2.more') }}</summary>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button class="btn btn-sm" :disabled="playlistStore.ingestRuns" @click="ask('reset')">
+                            <i class="bi bi-arrow-repeat" /> {{ t('player2.reset') }}
+                        </button>
+                        <span class="opacity-70">{{ t('player2.resetHelp') }}</span>
+                    </div>
+                </details>
+            </section>
         </div>
+
+        <ConfirmModal
+            :show="asking !== null"
+            :danger="asking !== 'back' && asking !== 'next'"
+            :title="asking ? t(`player2.confirm.${asking}.title`) : ''"
+            :text="asking ? t(`player2.confirm.${asking}.text`) : ''"
+            :confirm-label="asking ? t(`player2.confirm.${asking}.yes`) : ''"
+            @confirm="answer(true)"
+            @cancel="answer(false)"
+        />
     </div>
 </template>

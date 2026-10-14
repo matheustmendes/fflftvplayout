@@ -33,11 +33,37 @@ const saved = ref('[]')
 const showPicker = ref(false)
 const showCopy = ref(false)
 const pendingDay = ref<number | null>(null)
+const dragFrom = ref<number | null>(null)
+const dragOver = ref<number | null>(null)
 
 const dirty = computed(() => JSON.stringify(items.value) !== saved.value)
 const totalSec = computed(() => items.value.reduce((sum, item) => sum + item.duration, 0))
 const dayLength = computed(() => configStore.playlistLength || DAY_SECONDS)
 const overflow = computed(() => totalSec.value - dayLength.value)
+const dayStart = computed(() => configStore.playout.playlist?.startInSec ?? 0)
+
+/** When each program starts on the clock, from the start of the day. */
+const starts = computed(() => {
+    let at = dayStart.value
+
+    return items.value.map((item) => {
+        const begin = at
+
+        at += item.duration
+
+        return begin
+    })
+})
+
+function clock(seconds: number) {
+    const day = ((seconds % 86400) + 86400) % 86400
+    const pad = (value: number) => String(Math.floor(value)).padStart(2, '0')
+
+    return `${pad(day / 3600)}:${pad((day % 3600) / 60)}:${pad(day % 60)}`
+}
+
+const endClock = computed(() => clock(dayStart.value + totalSec.value))
+const COLORS = ['bg-primary', 'bg-accent', 'bg-success', 'bg-info', 'bg-warning']
 
 function fail(error: unknown) {
     indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
@@ -85,6 +111,23 @@ function move(index: number, by: number) {
 
     const copy = [...items.value]
     const [moved] = copy.splice(index, 1)
+
+    copy.splice(target, 0, moved!)
+    items.value = copy
+}
+
+function onDrop(target: number) {
+    const from = dragFrom.value
+
+    dragFrom.value = null
+    dragOver.value = null
+
+    if (from === null || from === target) {
+        return
+    }
+
+    const copy = [...items.value]
+    const [moved] = copy.splice(from, 1)
 
     copy.splice(target, 0, moved!)
     items.value = copy
@@ -157,41 +200,89 @@ watch(() => configStore.i, load)
                 </span>
             </div>
 
+            <div v-if="overflow > 0" class="alert alert-error mb-3">
+                <i class="bi bi-exclamation-octagon-fill" />
+                {{ t('commercial.grid.problemOver', { time: formatDuration(overflow) }) }}
+            </div>
+            <div v-else-if="items.length && overflow < -dayLength * 0.5" class="alert alert-warning mb-3">
+                <i class="bi bi-exclamation-triangle-fill" />
+                {{ t('commercial.grid.problemShort', { time: formatDuration(-overflow) }) }}
+            </div>
             <p v-if="!items.length" class="opacity-70">{{ t('commercial.grid.empty') }}</p>
-            <ol v-else class="divide-y divide-base-300 text-sm">
-                <li
-                    v-for="(item, index) in items"
-                    :key="`${index}-${item.source}`"
-                    class="flex items-center gap-2 py-1.5"
-                >
-                    <span class="w-6 text-right opacity-60">{{ index + 1 }}</span>
-                    <input v-if="canManage" v-model="item.title" class="input input-xs grow min-w-0" maxlength="100" />
-                    <span v-else class="grow truncate">{{ item.title }}</span>
-                    <span class="hidden md:block text-xs opacity-50 truncate max-w-56">{{ item.source }}</span>
-                    <span class="w-16 text-right tabular-nums opacity-70">{{ formatDuration(item.duration) }}</span>
-                    <template v-if="canManage">
-                        <button
-                            class="btn btn-xs btn-ghost"
-                            :disabled="index === 0"
-                            :title="t('commercial.grid.up')"
-                            @click="move(index, -1)"
-                        >
-                            <i class="bi bi-arrow-up" />
-                        </button>
-                        <button
-                            class="btn btn-xs btn-ghost"
-                            :disabled="index === items.length - 1"
-                            :title="t('commercial.grid.down')"
-                            @click="move(index, 1)"
-                        >
-                            <i class="bi bi-arrow-down" />
-                        </button>
-                        <button class="btn btn-xs btn-ghost" :title="t('commercial.remove')" @click="remove(index)">
-                            <i class="bi bi-x-lg" />
-                        </button>
-                    </template>
-                </li>
-            </ol>
+            <div v-else>
+                <div class="mb-3">
+                    <div
+                        class="flex h-5 w-full overflow-hidden rounded-full bg-base-300"
+                        :title="t('commercial.grid.barHelp')"
+                    >
+                        <div
+                            v-for="(item, index) in items"
+                            :key="`bar-${index}`"
+                            class="h-full border-r border-base-100"
+                            :class="COLORS[index % COLORS.length]"
+                            :style="{ width: `${Math.min(100, (item.duration * 100) / dayLength)}%` }"
+                            :title="`${item.title} (${formatDuration(item.duration)})`"
+                        />
+                    </div>
+                    <div class="mt-1 flex justify-between text-xs opacity-60">
+                        <span>{{ clock(dayStart) }}</span>
+                        <span>{{ t('commercial.grid.endsAt', { time: endClock }) }}</span>
+                    </div>
+                </div>
+                <ol class="divide-y divide-base-300 text-sm">
+                    <li
+                        v-for="(item, index) in items"
+                        :key="`${index}-${item.source}`"
+                        class="flex items-center gap-2 py-1.5 rounded transition-colors"
+                        :class="[
+                            dragOver === index && dragFrom !== index && 'bg-primary/10',
+                            dragFrom === index && 'opacity-40',
+                        ]"
+                        :draggable="canManage"
+                        @dragstart="dragFrom = index"
+                        @dragend=";((dragFrom = null), (dragOver = null))"
+                        @dragover.prevent="dragOver = index"
+                        @drop.prevent="onDrop(index)"
+                    >
+                        <i
+                            v-if="canManage"
+                            class="bi bi-grip-vertical cursor-grab text-lg opacity-50 hidden sm:inline"
+                            :title="t('commercial.grid.dragHelp')"
+                        />
+                        <span class="w-6 text-right opacity-60">{{ index + 1 }}</span>
+                        <span class="w-20 shrink-0 tabular-nums opacity-70">{{ clock(starts[index] ?? 0) }}</span>
+                        <input
+                            v-if="canManage"
+                            v-model="item.title"
+                            class="input input-xs grow min-w-0"
+                            maxlength="100"
+                        />
+                        <span v-else class="grow truncate">{{ item.title }}</span>
+                        <span class="w-16 text-right tabular-nums opacity-70">{{ formatDuration(item.duration) }}</span>
+                        <template v-if="canManage">
+                            <button
+                                class="btn btn-xs btn-ghost"
+                                :disabled="index === 0"
+                                :title="t('commercial.grid.up')"
+                                @click="move(index, -1)"
+                            >
+                                <i class="bi bi-arrow-up" />
+                            </button>
+                            <button
+                                class="btn btn-xs btn-ghost"
+                                :disabled="index === items.length - 1"
+                                :title="t('commercial.grid.down')"
+                                @click="move(index, 1)"
+                            >
+                                <i class="bi bi-arrow-down" />
+                            </button>
+                            <button class="btn btn-xs btn-ghost" :title="t('commercial.remove')" @click="remove(index)">
+                                <i class="bi bi-x-lg" />
+                            </button>
+                        </template>
+                    </li>
+                </ol>
+            </div>
 
             <div v-if="canManage" class="mt-4 flex flex-wrap items-center gap-2">
                 <button class="btn btn-sm" @click="showPicker = true">

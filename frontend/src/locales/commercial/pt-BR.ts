@@ -188,6 +188,12 @@ export default {
         removeText: 'O intervalo das {time} será removido.',
     },
     grid: {
+        barHelp: 'Cada cor é um programa; o tamanho mostra quanto do dia ele ocupa.',
+        endsAt: 'Termina às {time}',
+        dragHelp: 'Arraste para trocar a ordem',
+        problemOver:
+            'Esta grade passa {time} do tamanho do dia. Tire ou encurte um programa, senão o fim do dia será cortado.',
+        problemShort: 'Faltam {time} para completar o dia. O resto será preenchido com o conteúdo de enchimento.',
         help: 'A grade é a ordem dos programas de cada dia da semana. Ela se repete toda semana; os comerciais entram nos intervalos.',
         total: 'Total: {time}',
         over: 'passa {time} do dia',

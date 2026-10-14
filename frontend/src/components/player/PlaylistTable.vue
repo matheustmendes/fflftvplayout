@@ -23,6 +23,7 @@ dayjs.extend(timezone)
 dayjs.extend(utc)
 
 import { stringFormatter, playlistOperations } from '@/composables/helper'
+import EmptyState from '@/components/ui/EmptyState.vue'
 import { useConfig } from '@/stores/config'
 import { useMedia } from '@/stores/media'
 import { usePlaylist } from '@/stores/playlist'
@@ -55,6 +56,11 @@ defineProps({
         default() {
             return ''
         },
+    },
+    /** Show the columns that only people who edit the cuts need: start, end, commercial flag. */
+    details: {
+        type: Boolean,
+        default: false,
     },
 })
 
@@ -217,34 +223,39 @@ function deletePlaylistItem(index: number) {
         </div>
 
         <div
-            class="grid grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px] bg-base-100 border-b border-base-content/30 rounded-tr-lg py-2 text-sm font-bold text-base-content/70"
+            class="grid bg-base-100 border-b border-base-content/30 rounded-tr-lg py-2 text-sm font-bold text-base-content/70"
+            :class="
+                details
+                    ? 'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px]'
+                    : 'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_95px_85px_85px]'
+            "
         >
             <div v-if="!configStore.playout.playlist.infinit" class="px-3">
-                {{ t('player.start') }}
+                {{ t('player2.col.time') }}
             </div>
             <div>
-                {{ t('player.file') }}
+                {{ t('player2.col.program') }}
             </div>
             <div class="px-2 text-center">
-                {{ t('player.play') }}
+                {{ t('player2.col.see') }}
             </div>
             <div class="px-2 hidden 2md:block text-center">
                 {{ t('player.duration') }}
             </div>
-            <div class="px-2 hidden 2md:block text-center">
+            <div v-if="details" class="px-2 hidden 2md:block text-center">
                 {{ t('player.in') }}
             </div>
-            <div class="px-2 hidden 2md:block text-center">
+            <div v-if="details" class="px-2 hidden 2md:block text-center">
                 {{ t('player.out') }}
             </div>
-            <div class="px-2 hidden 2md:block text-center">
-                {{ t('player.ad') }}
+            <div v-if="details" class="px-2 hidden 2md:block text-center">
+                {{ t('player2.col.ad') }}
             </div>
             <div class="px-2 text-center">
-                {{ t('player.edit') }}
+                {{ t('player2.col.edit') }}
             </div>
             <div class="px-2 hidden 2md:block text-center">
-                {{ t('player.delete') }}
+                {{ t('player2.col.delete') }}
             </div>
         </div>
 
@@ -269,17 +280,29 @@ function deletePlaylistItem(index: number) {
             >
                 <template #header>
                     <div v-if="playlistStore.playlist.length === 0" class="is-empty relative">
-                        <div class="absolute text-8xl text-base-content/40 text-center w-full mt-10">
-                            <i class="bi-box-arrow-in-down" />
-                        </div>
+                        <EmptyState
+                            icon="bi-calendar-x"
+                            :title="t('player2.empty.title')"
+                            :text="t('player2.empty.text')"
+                        >
+                            <RouterLink
+                                :to="{ name: 'commercial-today', query: { date: listDate } }"
+                                class="btn btn-primary btn-sm"
+                            >
+                                {{ t('player2.empty.build') }}
+                            </RouterLink>
+                        </EmptyState>
                     </div>
                 </template>
                 <template #item="{ item, index }">
                     <li
                         :id="item.uid"
                         :key="item.uid"
-                        class="grid grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px] odd:bg-base-200 border-b border-base-content/20 duration-500 transition-colors py-2"
+                        class="grid odd:bg-base-200 border-b border-base-content/20 duration-500 transition-colors py-2"
                         :class="{
+                            'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px]':
+                                details,
+                            'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_95px_85px_85px]': !details,
                             'bg-lime-500/30!':
                                 playlistStore.playoutIsRunning && listDate === todayDate && index === currentIndex,
                             'bg-amber-600/40!': item.overtime,
@@ -293,6 +316,17 @@ function deletePlaylistItem(index: number) {
                             class="flex items-center gap-1 text-left truncate"
                             :class="{ 'handle cursor-grab': width > 768 }"
                         >
+                            <span
+                                v-if="
+                                    playlistStore.playoutIsRunning && listDate === todayDate && index === currentIndex
+                                "
+                                class="badge badge-success badge-sm shrink-0"
+                            >
+                                {{ t('player2.col.now') }}
+                            </span>
+                            <span v-if="item.ad" class="badge badge-ghost badge-sm shrink-0">
+                                {{ t('player2.col.spot') }}
+                            </span>
                             <span class="truncate">{{ item.title || filename(item.source) }}</span>
                             <i
                                 v-if="item.audio"
@@ -306,13 +340,13 @@ function deletePlaylistItem(index: number) {
                             </button>
                         </div>
                         <div class="text-center hidden 2md:block">{{ secToHMS(item.duration) }}</div>
-                        <div class="text-center hidden 2md:block">
+                        <div v-if="details" class="text-center hidden 2md:block">
                             {{ secToHMS(item.in) }}
                         </div>
-                        <div class="text-center hidden 2md:block">
+                        <div v-if="details" class="text-center hidden 2md:block">
                             {{ secToHMS(item.out) }}
                         </div>
-                        <div class="text-center hidden 2md:block leading-3">
+                        <div v-if="details" class="text-center hidden 2md:block leading-3">
                             <input v-model="item.ad" class="checkbox checkbox-xs rounded" type="checkbox" />
                         </div>
                         <div class="text-center hover:text-base-content/70">

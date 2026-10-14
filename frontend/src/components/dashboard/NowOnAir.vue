@@ -8,6 +8,7 @@ import type { StatusKind } from '@/components/ui/StatusPill.vue'
 
 import { authFetch } from '@/composables/authFetch'
 import { formatDuration } from '@/composables/commercialApi'
+import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
 import { useLive } from '@/stores/live'
@@ -21,7 +22,11 @@ defineProps<{
 type Action = 'start' | 'stop' | 'restart' | 'skip'
 
 const { t } = useI18n()
+const authStore = useAuth()
 const configStore = useConfig()
+
+/** Stopping or restarting the channel is for administrators; the operator skips and starts. */
+const canManage = computed(() => authStore.role !== 'user')
 const indexStore = useIndex()
 const live = useLive()
 
@@ -120,11 +125,16 @@ function answer(confirmed: boolean) {
             <button v-if="running && !live.ingest" class="btn btn-primary" :disabled="busy" @click="ask('skip')">
                 <i class="bi bi-skip-forward-fill" /> {{ t('dash.now.skip') }}
             </button>
-            <button v-if="running || live.state === 'restarting'" class="btn" :disabled="busy" @click="ask('restart')">
+            <button
+                v-if="canManage && (running || live.state === 'restarting')"
+                class="btn"
+                :disabled="busy"
+                @click="ask('restart')"
+            >
                 <i class="bi bi-arrow-clockwise" /> {{ t('dash.now.restart') }}
             </button>
             <button
-                v-if="running || live.state === 'restarting'"
+                v-if="canManage && (running || live.state === 'restarting')"
                 class="btn btn-error btn-outline"
                 :disabled="busy"
                 @click="ask('stop')"

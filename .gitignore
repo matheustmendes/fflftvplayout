@@ -53,3 +53,6 @@ Videos/
 *.tar*
 home
 home/
+
+# Cópias de trabalho temporárias dos agentes
+.claude/worktrees/

@@ -20,7 +20,7 @@ import { Splitpanes, Pane } from 'splitpanes'
 import { computed, ref, onBeforeMount } from 'vue'
 import { cloneDeep } from 'es-toolkit/object'
 import { useI18n } from 'vue-i18n'
-import { useWindowSize } from '@vueuse/core'
+import { onClickOutside, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { useHead } from '@unhead/vue'
 
@@ -29,6 +29,8 @@ dayjs.extend(LocalizedFormat)
 dayjs.extend(timezone)
 dayjs.extend(utc)
 
+import ConfirmModal from '@/components/ui/ConfirmModal.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import PlayerControl from '@/components/player/PlayerControl.vue'
 import MediaBrowser from '@/components/MediaBrowser.vue'
 import PlaylistTable from '@/components/player/PlaylistTable.vue'
@@ -71,6 +73,28 @@ const showPreviewModal = ref(false)
 const showSourceModal = ref(false)
 const showImportModal = ref(false)
 const showCopyModal = ref(false)
+const showDetails = ref(false)
+const moreOpen = ref(false)
+const moreMenu = ref<HTMLElement>()
+
+onClickOutside(moreMenu, () => (moreOpen.value = false))
+
+function dayStep(days: number) {
+    listDate.value = dayjs(listDate.value).add(days, 'day').format('YYYY-MM-DD')
+    beforeDayStart.value = false
+    firstLoad.value = false
+}
+
+function goToday() {
+    listDate.value = dayjs().tz(configStore.timezone).format('YYYY-MM-DD')
+    beforeDayStart.value = false
+    firstLoad.value = false
+}
+
+function pick(action: () => void) {
+    moreOpen.value = false
+    action()
+}
 const showDeleteModal = ref(false)
 const showPlaylistGenerator = ref(false)
 
@@ -397,20 +421,27 @@ async function deletePlaylist(del: boolean) {
 </script>
 <template>
     <div class="h-full">
+        <div class="px-3 pt-4">
+            <PageHeader :title="t('player2.title')" :subtitle="t('player2.subtitle')" />
+        </div>
         <PlayerControl />
-        <div class="flex justify-end p-1">
-            <div class="h-8 flex">
-                <div class="text-warning flex-none flex justify-end p-2">
-                    <div
-                        v-if="firstLoad && beforeDayStart"
-                        class="tooltip tooltip-right tooltip-warning"
-                        :data-tip="t('player.dateYesterday')"
-                    >
-                        <SvgIcon name="warning" />
-                    </div>
-                </div>
+        <div class="flex flex-wrap items-center gap-2 px-3 pt-3 pb-1">
+            <h2 class="text-xl font-bold me-auto">{{ t('player2.dayList') }}</h2>
+            <div
+                v-if="firstLoad && beforeDayStart"
+                class="tooltip tooltip-warning text-warning"
+                :data-tip="t('player.dateYesterday')"
+            >
+                <SvgIcon name="warning" />
+            </div>
+            <div
+                v-if="!configStore.playout.playlist.infinit && configStore.playout.processing.mode !== 'folder'"
+                class="flex items-center gap-1"
+            >
+                <button class="btn btn-sm btn-square" :title="t('player2.prevDay')" @click="dayStep(-1)">
+                    <i class="bi bi-chevron-left" />
+                </button>
                 <VueDatePicker
-                    v-if="!configStore.playout.playlist.infinit && configStore.playout.processing.mode !== 'folder'"
                     v-model="listDate"
                     :hide-navigation="['time']"
                     :action-row="{ showCancel: false, showSelect: false, showPreview: false }"
@@ -424,9 +455,72 @@ async function deletePlaylist(del: boolean) {
                     required
                     @update:model-value=";((beforeDayStart = false), (firstLoad = false))"
                 />
+                <button class="btn btn-sm btn-square" :title="t('player2.nextDay')" @click="dayStep(1)">
+                    <i class="bi bi-chevron-right" />
+                </button>
+                <button class="btn btn-sm" @click="goToday">{{ t('player2.today') }}</button>
             </div>
         </div>
-        <div class="p-1 min-h-65 h-[calc(100vh-800px)] xl:h-[calc(100vh-480px)]">
+
+        <div
+            v-if="configStore.playout.processing.mode === 'playlist'"
+            class="flex flex-wrap items-center gap-2 px-3 pb-2"
+        >
+            <button class="btn btn-sm btn-primary" @click=";((targetDate = listDate), savePlaylist(true))">
+                <i class="bi bi-floppy" /> {{ t('player2.save') }}
+            </button>
+            <button class="btn btn-sm" @click=";((playlistStore.playlist.length = 0), playlistTable.getPlaylist())">
+                <i class="bi bi-arrow-counterclockwise" /> {{ t('player2.undo') }}
+            </button>
+            <label class="ms-auto flex items-center gap-2 text-sm cursor-pointer">
+                <input v-model="showDetails" type="checkbox" class="toggle toggle-sm" />
+                {{ t('player2.details') }}
+            </label>
+            <div ref="moreMenu" class="relative">
+                <button class="btn btn-sm" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
+                    {{ t('player2.more') }} <i class="bi bi-chevron-down text-xs" />
+                </button>
+                <ul
+                    v-if="moreOpen"
+                    class="absolute right-0 z-40 mt-1 w-72 rounded-xl border border-base-300 bg-base-100 p-2 shadow-xl"
+                >
+                    <li>
+                        <button class="menu-row" @click="pick(() => (showCopyModal = true))">
+                            <i class="bi bi-files" /> {{ t('player2.menu.copy') }}
+                        </button>
+                    </li>
+                    <li v-if="!configStore.playout.playlist.infinit">
+                        <button class="menu-row" @click="pick(() => loopClips())">
+                            <i class="bi bi-view-stacked" /> {{ t('player2.menu.loop') }}
+                        </button>
+                    </li>
+                    <li>
+                        <button class="menu-row" @click="pick(() => (showSourceModal = true))">
+                            <i class="bi bi-file-earmark-plus" /> {{ t('player2.menu.remote') }}
+                        </button>
+                    </li>
+                    <li>
+                        <button class="menu-row" @click="pick(() => (showImportModal = true))">
+                            <i class="bi bi-file-text" /> {{ t('player2.menu.import') }}
+                        </button>
+                    </li>
+                    <li>
+                        <button
+                            class="menu-row"
+                            @click="pick(() => (mediaStore.getTree('', true), (showPlaylistGenerator = true)))"
+                        >
+                            <i class="bi bi-sort-down-alt" /> {{ t('player2.menu.generate') }}
+                        </button>
+                    </li>
+                    <li class="mt-1 border-t border-base-300 pt-1">
+                        <button class="menu-row text-error" @click="pick(() => (showDeleteModal = true))">
+                            <i class="bi bi-trash" /> {{ t('player2.menu.delete') }}
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+        <div class="px-3 pb-4 min-h-96 h-[calc(100vh-200px)]">
             <Splitpanes
                 v-if="configStore.playout.processing.mode === 'playlist'"
                 class="border border-base-content/30 rounded-sm shadow"
@@ -441,68 +535,17 @@ async function deletePlaylist(del: boolean) {
                     <MediaBrowser :preview="setPreviewData" />
                 </Pane>
                 <pane>
-                    <PlaylistTable ref="playlistTable" :edit-item="editPlaylistItem" :preview="setPreviewData" />
+                    <PlaylistTable
+                        ref="playlistTable"
+                        :edit-item="editPlaylistItem"
+                        :preview="setPreviewData"
+                        :details="showDetails"
+                    />
                 </pane>
             </Splitpanes>
             <div v-else class="h-full border border-b-2 border-base-content/30 rounded-sm shadow">
                 <MediaBrowser :preview="setPreviewData" />
             </div>
-        </div>
-
-        <div v-if="configStore.playout.processing.mode === 'playlist'" class="h-16 join flex justify-end p-3">
-            <button class="btn btn-sm btn-primary join-item" :title="t('player.copy')" @click="showCopyModal = true">
-                <i class="bi-files" />
-            </button>
-            <button
-                v-if="!configStore.playout.playlist.infinit"
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.loop')"
-                @click="loopClips()"
-            >
-                <i class="bi-view-stacked" />
-            </button>
-            <button
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.remote')"
-                @click="showSourceModal = true"
-            >
-                <i class="bi-file-earmark-plus" />
-            </button>
-            <button
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.import')"
-                @click="showImportModal = true"
-            >
-                <i class="bi-file-text" />
-            </button>
-            <button
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.generate')"
-                @click="(mediaStore.getTree('', true), (showPlaylistGenerator = true))"
-            >
-                <i class="bi-sort-down-alt" />
-            </button>
-            <button
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.reset')"
-                @click=";((playlistStore.playlist.length = 0), playlistTable.getPlaylist())"
-            >
-                <i class="bi-arrow-counterclockwise" />
-            </button>
-            <button
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.save')"
-                @click=";((targetDate = listDate), savePlaylist(true))"
-            >
-                <i class="bi-download" />
-            </button>
-            <button
-                class="btn btn-sm btn-primary join-item"
-                :title="t('player.deletePlaylist')"
-                @click="showDeleteModal = true"
-            >
-                <i class="bi-trash" />
-            </button>
         </div>
 
         <GenericModal
@@ -605,12 +648,31 @@ async function deletePlaylist(del: boolean) {
             <input type="file" class="file-input file-input-sm w-full" multiple @change="onFileChange" />
         </GenericModal>
 
-        <GenericModal :show="showDeleteModal" title="Delete Program" :modal-action="deletePlaylist">
-            <span>
-                {{ t('player.deleteFrom') }} <strong>{{ listDate }}</strong>
-            </span>
-        </GenericModal>
+        <ConfirmModal
+            :show="showDeleteModal"
+            danger
+            :title="t('player2.deleteTitle')"
+            :text="t('player2.deleteText', { date: listDate })"
+            :confirm-label="t('player2.deleteYes')"
+            @confirm="deletePlaylist(true)"
+            @cancel="deletePlaylist(false)"
+        />
 
         <PlaylistGenerator v-if="showPlaylistGenerator" :close="closeGenerator" />
     </div>
 </template>
+<style scoped>
+.menu-row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.75rem;
+    border-radius: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+}
+
+.menu-row:hover {
+    background: var(--color-base-200);
+}
+</style>

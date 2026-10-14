@@ -185,6 +185,12 @@ export default {
         removeText: 'The break at {time} will be removed.',
     },
     grid: {
+        barHelp: 'Each color is a program; its size shows how much of the day it takes.',
+        endsAt: 'Ends at {time}',
+        dragHelp: 'Drag to change the order',
+        problemOver:
+            'This grid is {time} longer than the day. Remove or shorten a program, otherwise the end of the day is cut.',
+        problemShort: '{time} are missing to fill the day. The rest is filled with the filler content.',
         help: 'The schedule is the order of the programs of each weekday. It repeats every week; spots enter in the breaks.',
         total: 'Total: {time}',
         over: '{time} over the day',
