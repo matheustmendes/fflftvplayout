@@ -81,7 +81,9 @@ LOCAL (você): valida o que depende do mundo real, que a nuvem não alcança:
   .dev/acceptance/M5.md (abrir o PDF e o CSV de verdade).
 - M6 (telas do módulo, menu Comerciais) está implementada na nuvem. Roteiro de
   aceite: .dev/acceptance/M6.md (usar com um operador de verdade).
-- Próxima etapa (na nuvem): M7, geração automática dos próximos dias.
+- M7 (montagem automática dos próximos dias) está implementada na nuvem. Roteiro
+  de aceite: .dev/acceptance/M7.md.
+- Próxima etapa (na nuvem): Fase 1 (relay das 3 saídas, tentativas do supervisor).
 - Ainda NÃO existem: geração automática
   dos próximos dias nem telas do módulo (a grade se cadastra por JSON).
 

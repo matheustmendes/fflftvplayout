@@ -11,7 +11,7 @@ use axum::{
 };
 use chrono::{NaiveDate, Utc};
 use protect_axum::authorities::AuthDetails;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     api::{
@@ -21,13 +21,15 @@ use crate::{
     db::{
         handles::{self, AiringFilter},
         models::{
-            Advertiser, AirKind, AirResult, Airing, BreakWindow, Campaign, CommercialSettings,
-            ReportSettings, Role, Spot, WeekTemplateItem,
+            Advertiser, AirKind, AirResult, Airing, AutoPlanDay, AutoPlanSettings, AutoPlanState,
+            BreakWindow, Campaign, CommercialSettings, ReportSettings, Role, Spot,
+            WeekTemplateItem,
         },
     },
     file::norm_abs_path,
     player::controller::ChannelManager,
     utils::{
+        auto_plan::{DayOutcome, active_playlist_date, ensure_upcoming_days},
         commercial::{SpotRequest, register_spot, retry_spot, run_conversion, unique_conflict},
         day_plan::{
             PlanPreview, WeekItemInput, apply_plan, build_template_items, plan_for_date,
@@ -1008,4 +1010,112 @@ async fn read_logo(storage: &std::path::Path, logo_path: &str) -> Option<Vec<u8>
     }
 
     tokio::fs::read(&file).await.ok()
+}
+
+#[derive(Debug, Serialize)]
+pub struct AutoPlanStatus {
+    pub settings: AutoPlanSettings,
+    /// The day on the air and the days kept planned after it.
+    pub days: Vec<AutoPlanDay>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AutoPlanRun {
+    pub date: String,
+    pub state: AutoPlanState,
+    pub message: String,
+}
+
+impl From<DayOutcome> for AutoPlanRun {
+    fn from(outcome: DayOutcome) -> Self {
+        Self {
+            date: outcome.date.format("%Y-%m-%d").to_string(),
+            state: outcome.state,
+            message: outcome.message,
+        }
+    }
+}
+
+/// **Automatic planning**
+///
+/// Whether the upcoming days are planned automatically, how far ahead, and
+/// what was done with each day.
+///
+/// ```BASH
+/// curl -X GET http://127.0.0.1:8787/api/commercials/1/auto-plan \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_auto_plan(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<AutoPlanStatus>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    let manager = channel_manager(&state, channel).await?;
+    let config = manager.config.read().await.clone();
+    let settings = handles::select_auto_plan_settings(&state.pool, channel).await?;
+    let first = active_playlist_date(
+        Utc::now(),
+        config.channel.timezone.unwrap_or(chrono_tz::Tz::UTC),
+        config.playlist.start_sec.unwrap_or(0.0),
+    );
+    let last = first + chrono::Duration::days(i64::from(settings.horizon_days));
+    let days = handles::select_auto_plan_days(
+        &state.pool,
+        channel,
+        &first.format("%Y-%m-%d").to_string(),
+        &last.format("%Y-%m-%d").to_string(),
+    )
+    .await?;
+
+    Ok(Json(AutoPlanStatus { settings, days }))
+}
+
+/// **Update automatic planning**
+///
+/// ```BASH
+/// curl -X PUT http://127.0.0.1:8787/api/commercials/1/auto-plan -H 'Content-Type: application/json' \
+/// -d '{ "enabled": true, "horizon_days": 3 }' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn update_auto_plan(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+    Json(mut data): Json<AutoPlanSettings>,
+) -> Result<Json<AutoPlanSettings>, ServiceError> {
+    ensure_manager(&user, &details, channel)?;
+    data.validate().map_err(ServiceError::BadRequest)?;
+    data.channel_id = channel;
+
+    handles::upsert_auto_plan_settings(&state.pool, channel, &data).await?;
+
+    Ok(Json(data))
+}
+
+/// **Plan the upcoming days now**
+///
+/// Does at once what the background task does every few minutes.
+///
+/// ```BASH
+/// curl -X POST http://127.0.0.1:8787/api/commercials/1/auto-plan/run \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn run_auto_plan_now(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<Vec<AutoPlanRun>>, ServiceError> {
+    ensure_manager(&user, &details, channel)?;
+
+    let manager = channel_manager(&state, channel).await?;
+    let config = manager.config.read().await.clone();
+    let name = manager.channel.lock().await.name.clone();
+    let outcomes = ensure_upcoming_days(&state.pool, &config, channel, &name, Utc::now()).await?;
+
+    Ok(Json(outcomes.into_iter().map(AutoPlanRun::from).collect()))
 }

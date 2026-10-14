@@ -143,6 +143,9 @@ export function useCommercialApi() {
         reportSettings: () => get<CommercialReportSettings>('/report-settings'),
         saveReportSettings: (settings: CommercialReportSettings) =>
             request<CommercialReportSettings>('PUT', '/report-settings', settings),
+        autoPlan: () => get<AutoPlanStatus>('/auto-plan'),
+        saveAutoPlan: (settings: AutoPlanSettings) => request<AutoPlanSettings>('PUT', '/auto-plan', settings),
+        runAutoPlan: () => request<AutoPlanRun[]>('POST', '/auto-plan/run'),
         reportSummary: (query: string) => get<CommercialReport>(`/reports/summary?${query}`),
     }
 }

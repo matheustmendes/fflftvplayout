@@ -913,6 +913,78 @@ impl CommercialSettings {
     }
 }
 
+pub const MIN_AUTO_PLAN_HORIZON_DAYS: i32 = 1;
+pub const MAX_AUTO_PLAN_HORIZON_DAYS: i32 = 14;
+
+/// Whether and how far ahead the upcoming days are planned automatically.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct AutoPlanSettings {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    #[serde(default = "active_by_default")]
+    pub enabled: bool,
+    /// Days after the day on the air that are kept planned.
+    #[serde(default = "default_horizon_days")]
+    pub horizon_days: i32,
+}
+
+const fn default_horizon_days() -> i32 {
+    3
+}
+
+impl Default for AutoPlanSettings {
+    fn default() -> Self {
+        Self {
+            channel_id: 0,
+            enabled: true,
+            horizon_days: default_horizon_days(),
+        }
+    }
+}
+
+impl AutoPlanSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(MIN_AUTO_PLAN_HORIZON_DAYS..=MAX_AUTO_PLAN_HORIZON_DAYS).contains(&self.horizon_days) {
+            return Err(format!(
+                "the number of days must be between {MIN_AUTO_PLAN_HORIZON_DAYS} and {MAX_AUTO_PLAN_HORIZON_DAYS}"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// What the automatic planner did with a day.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum AutoPlanState {
+    /// The day had no playlist and the planner wrote one.
+    Created,
+    /// The planner rewrote the playlist it had written, to include a change.
+    Updated,
+    /// The playlist is the one the planner wrote and nothing changed.
+    #[default]
+    Unchanged,
+    /// Somebody edited the playlist the planner wrote; it is left alone.
+    Edited,
+    /// A playlist the planner did not write, or the day on the air; left alone.
+    Existing,
+    /// The day could not be planned; the message says why.
+    Failed,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct AutoPlanDay {
+    pub channel_id: i32,
+    pub plan_date: String,
+    pub state: AutoPlanState,
+    pub message: String,
+    pub fingerprint: String,
+    pub updated_at: String,
+}
+
 const MAX_STATION_DETAILS_LENGTH: usize = 500;
 const MAX_FOOTER_NOTE_LENGTH: usize = 300;
 

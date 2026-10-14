@@ -38,6 +38,7 @@ use ffplayout::{
     utils::{
         airlog,
         args_parse::init_args,
+        auto_plan,
         channels::initialize_channels,
         config::get_config,
         errors::ProcessError,
@@ -157,6 +158,12 @@ async fn async_main() -> Result<(), ProcessError> {
             )
             .await?;
         }
+
+        tokio::spawn(auto_plan::run_auto_plan(
+            pool.clone(),
+            app_state.controller.clone(),
+            shutdown.clone(),
+        ));
 
         init_rate_limiter!(
             default: RuleConfig::new(LDuration::seconds(1), 16), // 16 req/s globally

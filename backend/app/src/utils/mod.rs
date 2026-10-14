@@ -13,6 +13,7 @@ use serde::{Deserialize, Deserializer, de};
 
 pub mod airlog;
 pub mod args_parse;
+pub mod auto_plan;
 pub mod break_planner;
 pub mod channels;
 pub mod commercial;

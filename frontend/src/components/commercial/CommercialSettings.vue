@@ -18,6 +18,8 @@ const { uploadToFolder, uploading, reset } = useFolderUpload()
 
 const conversion = ref<CommercialSettings | null>(null)
 const report = ref<CommercialReportSettings | null>(null)
+const auto = ref<AutoPlanSettings | null>(null)
+const autoResult = ref<AutoPlanRun[]>([])
 
 function fail(error: unknown) {
     indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 5)
@@ -25,7 +27,15 @@ function fail(error: unknown) {
 
 async function load() {
     try {
-        ;[conversion.value, report.value] = await Promise.all([api.settings(), api.reportSettings()])
+        const [settings, reportSettings, autoStatus] = await Promise.all([
+            api.settings(),
+            api.reportSettings(),
+            api.autoPlan(),
+        ])
+
+        conversion.value = settings
+        report.value = reportSettings
+        auto.value = autoStatus.settings
     } catch (error) {
         fail(error)
     }
@@ -39,6 +49,27 @@ async function saveConversion() {
     try {
         conversion.value = await api.saveSettings(conversion.value)
         indexStore.msgAlert('success', t('commercial.saved'), 3)
+    } catch (error) {
+        fail(error)
+    }
+}
+
+async function saveAuto() {
+    if (!auto.value) {
+        return
+    }
+
+    try {
+        auto.value = await api.saveAutoPlan(auto.value)
+        indexStore.msgAlert('success', t('commercial.saved'), 3)
+    } catch (error) {
+        fail(error)
+    }
+}
+
+async function runAuto() {
+    try {
+        autoResult.value = await api.runAutoPlan()
     } catch (error) {
         fail(error)
     }
@@ -87,6 +118,38 @@ watch(() => configStore.i, load)
 </script>
 <template>
     <div class="space-y-5">
+        <section v-if="auto" class="card bg-base-100 shadow p-4 space-y-3">
+            <h2 class="font-bold text-lg">{{ t('commercial.auto.title') }}</h2>
+            <p class="text-sm opacity-70">{{ t('commercial.auto.help') }}</p>
+            <label class="flex items-center gap-2 text-sm">
+                <input v-model="auto.enabled" type="checkbox" class="toggle toggle-sm toggle-accent" />
+                {{ t('commercial.auto.enabled') }}
+            </label>
+            <label v-if="auto.enabled" class="form-control max-w-xs">
+                <span class="label-text mb-1">{{ t('commercial.auto.horizon') }}</span>
+                <input
+                    v-model.number="auto.horizon_days"
+                    type="number"
+                    min="1"
+                    max="14"
+                    class="input input-sm w-full"
+                />
+            </label>
+            <p class="text-xs opacity-60">{{ t('commercial.auto.rules') }}</p>
+            <div class="flex flex-wrap gap-2">
+                <button class="btn btn-sm btn-accent" @click="saveAuto">{{ t('commercial.save') }}</button>
+                <button class="btn btn-sm" :disabled="!auto.enabled" @click="runAuto">
+                    {{ t('commercial.auto.runNow') }}
+                </button>
+            </div>
+            <ul v-if="autoResult.length" class="text-sm divide-y divide-base-300">
+                <li v-for="day in autoResult" :key="day.date" class="py-1">
+                    {{ day.date }} — {{ t(`commercial.auto.state.${day.state}`) }}
+                    <span v-if="day.state === 'failed'" class="text-error"> ({{ day.message }})</span>
+                </li>
+            </ul>
+        </section>
+
         <section v-if="report" class="card bg-base-100 shadow p-4 space-y-3">
             <h2 class="font-bold text-lg">{{ t('commercial.settings.reportTitle') }}</h2>
             <p class="text-sm opacity-70">{{ t('commercial.settings.reportHelp') }}</p>

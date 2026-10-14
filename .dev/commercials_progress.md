@@ -344,4 +344,45 @@ Limitações:
   `.dev/acceptance/M6.md` para rodar com o build de release.
 - Não foi testado em celular nem com um operador de verdade.
 
-## Próximo: M7, geração automática dos próximos dias
+## M7, montagem automática dos próximos dias: implementada na nuvem
+
+- Migration `00011_auto_plan.sql`: configurações por canal (ligado, dias à
+  frente: 1 a 14, padrão 3) e o histórico do que foi feito em cada dia.
+- `utils/auto_plan.rs`: uma tarefa em segundo plano olha todos os canais a cada
+  10 minutos (a primeira vez 30 s depois de iniciar) e, do dia que está no ar
+  até N dias à frente:
+  - **dia sem programação:** monta e grava (usa o mesmo compilador da M3 e já
+    registra as promessas do as-run da M4);
+  - **dia que o próprio sistema montou:** regrava quando o plano muda (um
+    comercial enviado à tarde entra na programação de amanhã);
+  - **dia montado ou editado à mão, e o dia no ar:** nunca é tocado.
+  O sistema reconhece o que escreveu por uma impressão digital do conteúdo
+  (fontes, cortes e marca de comercial), então qualquer edição manual protege o
+  dia. Um dia que não dá para montar (por exemplo, sem programas na grade)
+  registra o motivo e os outros dias continuam.
+- "Dia no ar" respeita o início do dia do canal (um dia que começa às 06:00 ainda
+  é a data anterior às 03:00) e o fuso do canal.
+- API: `GET/PUT /api/commercials/{canal}/auto-plan` (operador lê, administrador
+  altera) e `POST .../auto-plan/run` ("montar agora", administrador).
+- Telas: seção "Próximos dias" na aba Hoje (Montado, Atualizado, Editado à mão,
+  Já existia, Não foi possível montar) e a configuração, com o botão "Montar
+  agora", em Ajustes.
+
+Limitações e decisões:
+
+- Um dia montado pelo botão "Montar este dia" conta como "já existia" e não é
+  atualizado sozinho; para voltar ao automático, apague a programação do dia.
+- O motivo de um dia que falhou vem do servidor, em inglês.
+- A tarefa não envia e-mail nem alerta: o aviso é a tela (Hoje) e o log. Um
+  alerta ativo (e-mail) para "amanhã não está montada" é uma melhoria possível.
+- A tolerância do dia no ar (não regravar) é total: se o operador quiser mudar
+  o dia no ar, faz pelo painel.
+
+Verificação (nuvem): fmt, clippy `--deny warnings` e suíte completa. Testes de
+domínio: dia no ar com fuso e início do dia, impressão digital, criação dos dias,
+nada muda quando nada mudou, playlist alheia preservada, comercial novo chega aos
+dias do sistema mas não ao dia no ar, edição manual protegida, dia com falha
+isolado, canal desligado. Testes de HTTP (papéis, validação, execução e relatório).
+Conferido com servidor e navegador reais.
+
+## Próximo: Fase 1 (saída para os destinos) e validação com dados reais

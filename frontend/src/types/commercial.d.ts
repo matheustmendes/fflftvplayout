@@ -175,4 +175,28 @@ declare global {
         totals: ReportDayTotals
         notes: string[]
     }
+
+    type AutoPlanState = 'created' | 'updated' | 'unchanged' | 'edited' | 'existing' | 'failed'
+
+    interface AutoPlanSettings {
+        enabled: boolean
+        horizon_days: number
+    }
+
+    interface AutoPlanDay {
+        plan_date: string
+        state: AutoPlanState
+        message: string
+    }
+
+    interface AutoPlanStatus {
+        settings: AutoPlanSettings
+        days: AutoPlanDay[]
+    }
+
+    interface AutoPlanRun {
+        date: string
+        state: AutoPlanState
+        message: string
+    }
 }

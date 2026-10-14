@@ -1663,3 +1663,120 @@ async fn an_operator_downloads_the_report_as_summary_csv_and_pdf() {
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+#[serial]
+async fn automatic_planning_is_configured_run_and_reported() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let (status, current) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/auto-plan",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{current}");
+    assert_eq!(current["settings"]["enabled"], true);
+    assert_eq!(current["settings"]["horizon_days"], 3);
+    assert_eq!(current["days"].as_array().unwrap().len(), 0);
+
+    for (method, uri, body) in [
+        (
+            "PUT",
+            "/api/commercials/1/auto-plan",
+            json!({ "enabled": true, "horizon_days": 2 }),
+        ),
+        ("POST", "/api/commercials/1/auto-plan/run", json!(null)),
+    ] {
+        let (status, _) = send(&fixture, method, uri, Some(&operator), body).await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN, "operators only look: {uri}");
+    }
+
+    for days in [0, 15] {
+        let (status, _) = send(
+            &fixture,
+            "PUT",
+            "/api/commercials/1/auto-plan",
+            Some(&admin),
+            json!({ "enabled": true, "horizon_days": days }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{days} days");
+    }
+
+    let (status, saved) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/auto-plan",
+        Some(&admin),
+        json!({ "enabled": true, "horizon_days": 2 }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{saved}");
+
+    // Only Thursday has a schedule; the other weekdays report why they cannot be planned.
+    prepare_thursday(&fixture, &admin, &operator).await;
+
+    let (status, ran) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/auto-plan/run",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+    let days = ran.as_array().unwrap();
+
+    assert_eq!(status, StatusCode::OK, "{ran}");
+    assert_eq!(days.len(), 3, "the day on the air and two more");
+    assert!(
+        days.iter()
+            .all(|day| day["date"].is_string() && day["state"].is_string())
+    );
+    assert!(
+        days.iter()
+            .any(|day| day["state"] == "failed" && day["message"] != "")
+    );
+
+    let (_, after) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/auto-plan",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(after["settings"]["horizon_days"], 2);
+    assert_eq!(after["days"].as_array().unwrap().len(), 3);
+
+    let (_, _) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/auto-plan",
+        Some(&admin),
+        json!({ "enabled": false, "horizon_days": 2 }),
+    )
+    .await;
+    let (_, off) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/auto-plan/run",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(
+        off.as_array().unwrap().len(),
+        0,
+        "a channel that turned it off is left alone"
+    );
+}

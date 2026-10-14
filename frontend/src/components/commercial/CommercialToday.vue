@@ -27,6 +27,7 @@ const timezone = computed(() => configStore.timezone || 'UTC')
 const date = ref(todayInChannel(timezone.value))
 const preview = ref<PlanPreview | null>(null)
 const airings = ref<Airing[]>([])
+const autoPlan = ref<AutoPlanStatus | null>(null)
 const loading = ref(false)
 const showApply = ref(false)
 let refreshTimer: ReturnType<typeof setInterval> | undefined
@@ -70,6 +71,19 @@ function resultClass(result: AirResult) {
     }
 }
 
+function autoClass(state: AutoPlanState) {
+    switch (state) {
+        case 'created':
+        case 'updated':
+        case 'unchanged':
+            return 'badge-success text-white'
+        case 'failed':
+            return 'badge-error text-white'
+        default:
+            return 'badge-warning'
+    }
+}
+
 function kindLabel(kind: PlanItemKind) {
     return t(`commercial.today.kind.${kind}`)
 }
@@ -78,10 +92,15 @@ async function load() {
     loading.value = true
 
     try {
-        const [plan, rows] = await Promise.all([api.plan(date.value), api.airlog(date.value, date.value)])
+        const [plan, rows, auto] = await Promise.all([
+            api.plan(date.value),
+            api.airlog(date.value, date.value),
+            api.autoPlan(),
+        ])
 
         preview.value = plan
         airings.value = rows
+        autoPlan.value = auto
     } catch (error) {
         indexStore.msgAlert('error', error instanceof Error ? error.message : String(error), 4)
     } finally {
@@ -179,6 +198,23 @@ watch(() => configStore.i, load)
                 })
             }}
         </div>
+
+        <section
+            v-if="autoPlan && autoPlan.settings.enabled && autoPlan.days.length"
+            class="card bg-base-100 shadow p-4"
+        >
+            <h2 class="font-bold text-lg mb-1">{{ t('commercial.auto.upcoming') }}</h2>
+            <p class="text-xs opacity-60 mb-2">{{ t('commercial.auto.upcomingHelp') }}</p>
+            <ul class="text-sm divide-y divide-base-300">
+                <li v-for="day in autoPlan.days" :key="day.plan_date" class="flex flex-wrap items-center gap-2 py-1">
+                    <span class="w-24 tabular-nums">{{ shortDate(day.plan_date) }}</span>
+                    <span class="badge badge-sm" :class="autoClass(day.state)">{{
+                        t(`commercial.auto.state.${day.state}`)
+                    }}</span>
+                    <span v-if="day.state === 'failed'" class="text-error text-xs grow min-w-0">{{ day.message }}</span>
+                </li>
+            </ul>
+        </section>
 
         <section v-if="preview" class="card bg-base-100 shadow p-4">
             <h2 class="font-bold text-lg mb-2">{{ t('commercial.today.breaks') }}</h2>
