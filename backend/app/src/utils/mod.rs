@@ -17,6 +17,7 @@ pub mod channels;
 pub mod commercial;
 pub mod config;
 pub mod control;
+pub mod day_plan;
 pub mod errors;
 pub mod generator;
 pub mod logging;

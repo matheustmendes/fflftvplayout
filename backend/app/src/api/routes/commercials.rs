@@ -5,6 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use chrono::NaiveDate;
 use protect_axum::authorities::AuthDetails;
 use serde::Deserialize;
 
@@ -15,11 +16,17 @@ use crate::{
     },
     db::{
         handles,
-        models::{Advertiser, BreakWindow, Campaign, CommercialSettings, Role, Spot},
+        models::{
+            Advertiser, BreakWindow, Campaign, CommercialSettings, Role, Spot, WeekTemplateItem,
+        },
     },
     player::controller::ChannelManager,
     utils::{
         commercial::{SpotRequest, register_spot, retry_spot, run_conversion, unique_conflict},
+        day_plan::{
+            PlanPreview, WeekItemInput, apply_plan, build_template_items, plan_for_date,
+            preview_date,
+        },
         errors::ServiceError,
         spot_convert::VideoTarget,
     },
@@ -287,16 +294,21 @@ pub async fn get_spots(
     ))
 }
 
-/// The running manager of a channel, and what spots must be converted to.
+/// The running manager of a channel.
+async fn channel_manager(state: &AppState, channel: i32) -> Result<ChannelManager, ServiceError> {
+    let guard = state.controller.read().await;
+
+    guard
+        .get(channel)
+        .ok_or_else(|| ServiceError::BadRequest(format!("Channel {channel} not found!")))
+}
+
+/// The channel storage, and the format spots must be converted to.
 async fn spot_context(
     state: &AppState,
     channel: i32,
 ) -> Result<(PathBuf, VideoTarget), ServiceError> {
-    let manager: ChannelManager = {
-        let guard = state.controller.read().await;
-        guard.get(channel)
-    }
-    .ok_or_else(|| ServiceError::BadRequest(format!("Channel {channel} not found!")))?;
+    let manager = channel_manager(state, channel).await?;
     let storage_root: PathBuf = manager.storage.root.read().await.clone();
     let config = manager.config.read().await;
     let target = VideoTarget {
@@ -517,4 +529,142 @@ pub async fn update_commercial_settings(
     handles::upsert_commercial_settings(&state.pool, channel, &data).await?;
 
     Ok(Json(data))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WeekTemplateBody {
+    #[serde(default)]
+    pub items: Vec<WeekItemInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ApplyQuery {
+    /// Replace a playlist that already exists for the date.
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+fn parse_date(date: &str) -> Result<NaiveDate, ServiceError> {
+    NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| {
+        ServiceError::BadRequest("the date must be in the format YYYY-MM-DD".to_string())
+    })
+}
+
+/// **Weekly template**
+///
+/// The programs of each weekday, in air order. `weekday` is 1 (Monday) to 7
+/// (Sunday).
+///
+/// ```BASH
+/// curl -X GET 'http://127.0.0.1:8787/api/commercials/1/week-template?weekday=4' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_week_template(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    Query(query): Query<WeekdayQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<Vec<WeekTemplateItem>>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    Ok(Json(
+        handles::select_week_template(&state.pool, channel, query.weekday).await?,
+    ))
+}
+
+/// **Save the programs of one weekday**
+///
+/// Replaces the whole day. Only the file is needed for each program: its
+/// length is read from the file.
+///
+/// ```BASH
+/// curl -X PUT http://127.0.0.1:8787/api/commercials/1/week-template/4 \
+/// -H 'Content-Type: application/json' \
+/// -d '{ "items": [ { "source": "shows/news.mp4", "title": "News" },
+///                  { "source": "shows/film.mp4", "in_sec": 5.0 } ] }' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn save_week_template_day(
+    State(state): State<AppState>,
+    Path((channel, weekday)): Path<(i32, i32)>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+    Json(body): Json<WeekTemplateBody>,
+) -> Result<Json<Vec<WeekTemplateItem>>, ServiceError> {
+    ensure_manager(&user, &details, channel)?;
+
+    if !(1..=7).contains(&weekday) {
+        return Err(ServiceError::BadRequest(
+            "weekday must be between 1 (Monday) and 7 (Sunday)".to_string(),
+        ));
+    }
+
+    let (storage_root, _) = spot_context(&state, channel).await?;
+    let items = build_template_items(&storage_root, &body.items).await?;
+
+    handles::replace_week_template_day(&state.pool, channel, weekday, &items).await?;
+
+    Ok(Json(
+        handles::select_week_template(&state.pool, channel, Some(weekday)).await?,
+    ))
+}
+
+/// **Preview the plan of a date**
+///
+/// Shows how the date would be built from the weekly template, the break
+/// windows and the running campaigns, with the warnings to read before
+/// applying it. Nothing is changed.
+///
+/// ```BASH
+/// curl -X GET http://127.0.0.1:8787/api/commercials/1/plan/2026-10-15 \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn preview_day_plan(
+    State(state): State<AppState>,
+    Path((channel, date)): Path<(i32, String)>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<PlanPreview>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    let date = parse_date(&date)?;
+    let manager = channel_manager(&state, channel).await?;
+    let config = manager.config.read().await.clone();
+
+    Ok(Json(
+        preview_date(&state.pool, &config, channel, date).await?,
+    ))
+}
+
+/// **Apply the plan of a date**
+///
+/// Writes the planned day as the playlist of the date. A playlist that already
+/// exists is only replaced with `overwrite=true`; a plan with an error is
+/// never applied.
+///
+/// ```BASH
+/// curl -X POST 'http://127.0.0.1:8787/api/commercials/1/plan/2026-10-15?overwrite=false' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn apply_day_plan(
+    State(state): State<AppState>,
+    Path((channel, date)): Path<(i32, String)>,
+    Query(query): Query<ApplyQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<serde_json::Value>, ServiceError> {
+    ensure_manager(&user, &details, channel)?;
+
+    let date = parse_date(&date)?;
+    let manager = channel_manager(&state, channel).await?;
+    let config = manager.config.read().await.clone();
+    let channel_name = manager.channel.lock().await.name.clone();
+    let plan = plan_for_date(&state.pool, &config, channel, date).await?;
+    let message = apply_plan(&config, &channel_name, &plan, date, query.overwrite).await?;
+
+    Ok(Json(serde_json::json!({
+        "message": message,
+        "warnings": plan.warnings,
+    })))
 }

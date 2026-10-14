@@ -813,3 +813,433 @@ async fn break_windows_are_normalized_unique_and_deletable() {
 
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+#[serial]
+async fn week_template_is_saved_per_weekday_with_lengths_read_from_the_files() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let (status, saved) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/week-template/4",
+        Some(&admin),
+        json!({ "items": [
+            { "source": "ad.mp4", "title": "Morning" },
+            { "source": "silent.mp4", "in_sec": 0.5 },
+        ] }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved.as_array().unwrap().len(), 2);
+    assert_eq!(saved[0]["title"], "Morning");
+    assert_eq!(saved[0]["position"], 0);
+    assert_eq!(
+        saved[1]["title"], "silent",
+        "the title defaults to the file name"
+    );
+    assert_eq!(saved[1]["position"], 1);
+    assert_eq!(saved[1]["in_sec"], 0.5);
+    assert!(saved[0]["duration_sec"].as_f64().unwrap() > 0.0);
+    assert_eq!(saved[0]["out_sec"], saved[0]["duration_sec"]);
+
+    let (_, other_day) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/week-template/5",
+        Some(&admin),
+        json!({ "items": [{ "source": "ad.mp4" }] }),
+    )
+    .await;
+
+    assert_eq!(other_day.as_array().unwrap().len(), 1);
+
+    let (_, thursday) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/week-template?weekday=4",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+    let (_, week) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/week-template",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(thursday.as_array().unwrap().len(), 2);
+    assert_eq!(week.as_array().unwrap().len(), 3);
+
+    let (status, replaced) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/week-template/4",
+        Some(&admin),
+        json!({ "items": [{ "source": "silent.mp4" }] }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        replaced.as_array().unwrap().len(),
+        1,
+        "saving replaces the day"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn week_template_rejects_bad_requests_and_other_roles_and_channels() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+
+    for (weekday, body, expected) in [
+        (0, json!({ "items": [] }), StatusCode::BAD_REQUEST),
+        (8, json!({ "items": [] }), StatusCode::BAD_REQUEST),
+        (
+            1,
+            json!({ "items": [{ "source": "missing.mp4" }] }),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            1,
+            json!({ "items": [{ "source": "../outside.mp4" }] }),
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            1,
+            json!({ "items": [{ "source": "ad.mp4", "in_sec": 9.0, "out_sec": 2.0 }] }),
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        let (status, answer) = send(
+            &fixture,
+            "PUT",
+            &format!("/api/commercials/1/week-template/{weekday}"),
+            Some(&admin),
+            body,
+        )
+        .await;
+
+        assert_eq!(status, expected, "weekday {weekday}: {answer}");
+    }
+
+    let (status, _) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/week-template/1",
+        Some(&operator),
+        json!({ "items": [{ "source": "ad.mp4" }] }),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "operators cannot change the template"
+    );
+
+    let (status, _) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/2/week-template",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (_, week) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/week-template",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert!(
+        week.as_array().unwrap().is_empty(),
+        "nothing was saved by the rejected calls"
+    );
+}
+
+/// Upload-converted spot, weekly template, break window: everything a planned
+/// day needs, for Thursday 2026-12-10 (inside the campaign of the helper).
+async fn prepare_thursday(fixture: &SecurityFixture, admin: &str, operator: &str) -> i64 {
+    let advertiser_id = create_advertiser(fixture, admin, "Padaria").await;
+    let campaign_id = create_campaign(fixture, admin, advertiser_id).await;
+    let (status, spot) = send(
+        fixture,
+        "POST",
+        "/api/commercials/1/spots",
+        Some(operator),
+        json!({ "campaign_id": campaign_id, "title": "Natal", "file_path": "natal.mxf" }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::ACCEPTED, "{spot}");
+
+    let spot_id = spot["id"].as_i64().unwrap();
+
+    assert_eq!(
+        wait_for_spot(fixture, operator, spot_id).await["status"],
+        "ready"
+    );
+
+    let (status, _) = send(
+        fixture,
+        "PUT",
+        "/api/commercials/1/week-template/4",
+        Some(admin),
+        json!({ "items": [{ "source": "ad.mp4", "title": "Morning" }, { "source": "silent.mp4" }] }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+
+    // The default day starts at 05:59:25, which is where the first break goes.
+    let (status, window) = send(
+        fixture,
+        "POST",
+        "/api/commercials/1/break-windows",
+        Some(admin),
+        json!({ "weekday": 4, "nominal_time": "05:59:25", "duration_sec": 10 }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{window}");
+
+    spot_id
+}
+
+#[tokio::test]
+#[serial]
+async fn a_day_is_planned_from_a_converted_spot_and_written_as_a_playlist() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let spot_id = prepare_thursday(&fixture, &admin, &operator).await;
+    let (status, preview) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/plan/2026-12-10",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{preview}");
+    assert_eq!(preview["weekday"], 4);
+    assert_eq!(preview["playlist_exists"], false);
+
+    let items = preview["plan"]["items"].as_array().unwrap();
+    let kinds: Vec<&str> = items.iter().map(|i| i["kind"].as_str().unwrap()).collect();
+
+    assert_eq!(kinds[0], "spot", "the break opens the day: {kinds:?}");
+    assert_eq!(
+        items[0]["source"],
+        format!("commercials/spot-{spot_id}.mp4")
+    );
+    assert_eq!(items[0]["start_time"], "05:59:25");
+    assert!(
+        kinds.contains(&"break_filler"),
+        "the break is 10 s, the spot about 3 s"
+    );
+    assert_eq!(kinds.iter().filter(|k| **k == "program").count(), 2);
+    assert_eq!(
+        kinds.last(),
+        Some(&"day_filler"),
+        "the programs are far shorter than a day"
+    );
+    assert_eq!(
+        preview["plan"]["total_sec"],
+        preview["plan"]["day_length_sec"]
+    );
+
+    let codes: Vec<&str> = preview["plan"]["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w["code"].as_str().unwrap())
+        .collect();
+
+    assert!(codes.contains(&"day_filled"));
+    assert!(codes.contains(&"break_underfilled"));
+    assert!(
+        !preview["plan"]["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| w["severity"] == "error")
+    );
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-10",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "operators only look at the plan"
+    );
+
+    let (status, applied) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-10",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{applied}");
+
+    let file = fixture.root.join("playlists/2026/12/2026-12-10.json");
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let program = written["program"].as_array().unwrap();
+
+    assert_eq!(written["date"], "2026-12-10");
+    assert_eq!(program.len(), items.len());
+    assert_eq!(
+        program[0]["source"],
+        format!("commercials/spot-{spot_id}.mp4")
+    );
+    assert_eq!(program[0]["ad"], true, "spots are advertising");
+    assert!(
+        program
+            .iter()
+            .any(|m| m["source"] == "ad.mp4" && m.get("ad").is_none())
+    );
+
+    let (_, after) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/plan/2026-12-10",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(after["playlist_exists"], true);
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-10",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "an existing playlist is not replaced by surprise"
+    );
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-10?overwrite=true",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+#[serial]
+async fn a_day_without_programs_is_reported_and_never_applied() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let (status, preview) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/plan/2026-12-11",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(preview["plan"]["warnings"][0]["code"], "no_programs");
+    assert_eq!(preview["plan"]["warnings"][0]["severity"], "error");
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/plan/2026-12-11?overwrite=true",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(
+        !fixture
+            .root
+            .join("playlists/2026/12/2026-12-11.json")
+            .exists()
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn plan_routes_validate_the_date_and_the_channel() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+
+    for date in ["2026-13-01", "tomorrow", "2026-12-1x"] {
+        let (status, _) = send(
+            &fixture,
+            "GET",
+            &format!("/api/commercials/1/plan/{date}"),
+            Some(&admin),
+            json!(null),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{date}");
+    }
+
+    for method in ["GET", "POST"] {
+        let (status, _) = send(
+            &fixture,
+            method,
+            "/api/commercials/2/plan/2026-12-10",
+            Some(&admin),
+            json!(null),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN, "{method} on another channel");
+    }
+
+    let (status, _) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/plan/2026-12-10",
+        None,
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
