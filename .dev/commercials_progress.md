@@ -115,4 +115,29 @@ Observações:
   do spot pela API aceita o caminho de qualquer extensão.
 - A mensagem de erro do spot segue em inglês; a tradução é da M6.
 
+### Roteiro de aceite e teste de fumaça da M2
+
+- `.dev/acceptance/M2.md`: passo a passo para rodar na máquina local com um
+  MXF real.
+- `scripts/dev/commercials_smoke.py`: teste de ponta a ponta pela API (só
+  biblioteca padrão do Python). Envia o arquivo pela API de upload, registra o
+  spot, acompanha a conversão e, com `--storage`, analisa a saída (formato,
+  volume, esquerdo × direito). Remove o que criou e restaura as
+  configurações.
+- `.dev/local-session-brief.md`: briefing para colar no Claude Code local.
+
+O script foi **testado aqui contra um servidor real** (binário compilado,
+setup pela API, MXF de duas trilhas mono): passou 17 verificações com o
+mapeamento `auto` (esquerdo e direito diferentes) e com `mix_all` (canais
+iguais, configuração restaurada), e falhou do jeito esperado, com mensagem
+clara e código de saída 1, com áudio mudo.
+
+Três achados do teste que corrigiram o roteiro e o script:
+
+- `ffplayout --init` não funciona sem terminal interativo ("The input device
+  is not a TTY"); o roteiro usa o setup pela tela ou por `POST /api/setup`.
+- O servidor recusa pastas em `/tmp`, `/root`, `/var`, `/usr` e similares.
+- O login é limitado a 3 por minuto por endereço (resposta 429); o script
+  agora espera e tenta de novo sozinho.
+
 ## Próximo: grade semanal e compilador de intervalos (M3)
