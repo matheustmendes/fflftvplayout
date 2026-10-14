@@ -1,7 +1,9 @@
 use sqlx::sqlite::SqlitePool;
 
 use crate::{
-    db::models::{Advertiser, BreakWindow, Campaign, CommercialSettings, Spot, SpotStatus},
+    db::models::{
+        Advertiser, BreakWindow, Campaign, CommercialSettings, EligibleSpot, Spot, SpotStatus,
+    },
     utils::errors::ProcessError,
 };
 
@@ -412,6 +414,36 @@ pub async fn fail_interrupted_spots(pool: &SqlitePool) -> Result<u64, ProcessErr
     let result = sqlx::query(QUERY).execute(pool).await?;
 
     Ok(result.rows_affected())
+}
+
+/// The ready spots of the campaigns that run on `date` (`YYYY-MM-DD`).
+pub async fn select_eligible_spots(
+    pool: &SqlitePool,
+    channel_id: i32,
+    date: &str,
+) -> Result<Vec<EligibleSpot>, ProcessError> {
+    const QUERY: &str = "SELECT
+            spot.id AS spot_id, spot.title AS spot_title, spot.file_path,
+            spot.duration_sec AS duration_sec,
+            campaign.id AS campaign_id, campaign.name AS campaign_name,
+            campaign.weight, campaign.max_per_day, campaign.position,
+            advertiser.id AS advertiser_id, advertiser.name AS advertiser_name
+        FROM spot
+        JOIN campaign ON campaign.id = spot.campaign_id
+        JOIN advertiser ON advertiser.id = campaign.advertiser_id
+        WHERE spot.channel_id = $1 AND spot.active = 1 AND spot.status = 'ready'
+            AND campaign.active = 1 AND advertiser.active = 1
+            AND (campaign.start_date IS NULL OR campaign.start_date <= $2)
+            AND (campaign.end_date IS NULL OR campaign.end_date >= $2)
+        ORDER BY campaign.id, spot.id";
+
+    let result = sqlx::query_as(QUERY)
+        .bind(channel_id)
+        .bind(date)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(result)
 }
 
 pub async fn archive_spot(
@@ -992,6 +1024,129 @@ mod tests {
                 .unwrap()
                 .status,
             SpotStatus::Ready
+        );
+    }
+
+    #[tokio::test]
+    async fn only_ready_spots_of_running_campaigns_are_eligible() {
+        let pool = pool().await;
+        let advertiser_id = insert_advertiser(&pool, 1, &advertiser("Padaria"))
+            .await
+            .unwrap();
+        let campaign_id = insert_campaign(&pool, 1, &campaign(advertiser_id, "Natal"))
+            .await
+            .unwrap()
+            .unwrap();
+        let ready = insert_spot(&pool, 1, campaign_id, "Ready", "a.mp4", "a.mp4", None)
+            .await
+            .unwrap()
+            .unwrap();
+        let processing = insert_spot(&pool, 1, campaign_id, "Busy", "b.mp4", "b.mp4", None)
+            .await
+            .unwrap()
+            .unwrap();
+        let archived = insert_spot(&pool, 1, campaign_id, "Old", "c.mp4", "c.mp4", None)
+            .await
+            .unwrap()
+            .unwrap();
+
+        complete_spot(&pool, 1, ready, "commercials/spot-1.mp4", 30.0)
+            .await
+            .unwrap();
+        complete_spot(&pool, 1, archived, "commercials/spot-3.mp4", 20.0)
+            .await
+            .unwrap();
+        archive_spot(&pool, 1, archived).await.unwrap();
+
+        let spots = select_eligible_spots(&pool, 1, "2026-10-15").await.unwrap();
+
+        assert_eq!(spots.len(), 1);
+        assert_eq!(spots[0].spot_id, ready);
+        assert_eq!(spots[0].file_path, "commercials/spot-1.mp4");
+        assert_eq!(spots[0].duration_sec, 30.0);
+        assert_eq!(spots[0].campaign_name, "Natal");
+        assert_eq!(spots[0].advertiser_name, "Padaria");
+        assert_eq!(spots[0].weight, 2);
+        assert_eq!(spots[0].max_per_day, Some(3));
+        assert_eq!(spots[0].position, BreakPosition::First);
+        assert!(!spots.iter().any(|spot| spot.spot_id == processing));
+    }
+
+    #[tokio::test]
+    async fn eligibility_follows_the_campaign_period_inclusive() {
+        let pool = pool().await;
+        let advertiser_id = insert_advertiser(&pool, 1, &advertiser("Padaria"))
+            .await
+            .unwrap();
+        let campaign_id = insert_campaign(&pool, 1, &campaign(advertiser_id, "Outubro"))
+            .await
+            .unwrap()
+            .unwrap();
+        let spot = insert_spot(&pool, 1, campaign_id, "Spot", "a.mp4", "a.mp4", None)
+            .await
+            .unwrap()
+            .unwrap();
+
+        complete_spot(&pool, 1, spot, "commercials/spot-1.mp4", 30.0)
+            .await
+            .unwrap();
+
+        for (date, expected) in [
+            ("2026-09-30", 0),
+            ("2026-10-01", 1),
+            ("2026-10-31", 1),
+            ("2026-11-01", 0),
+        ] {
+            assert_eq!(
+                select_eligible_spots(&pool, 1, date).await.unwrap().len(),
+                expected,
+                "{date}"
+            );
+        }
+
+        assert!(
+            select_eligible_spots(&pool, 2, "2026-10-15")
+                .await
+                .unwrap()
+                .is_empty(),
+            "other channels see nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn archived_advertisers_and_campaigns_are_not_eligible() {
+        let pool = pool().await;
+        let advertiser_id = insert_advertiser(&pool, 1, &advertiser("Padaria"))
+            .await
+            .unwrap();
+        let campaign_id = insert_campaign(&pool, 1, &campaign(advertiser_id, "Natal"))
+            .await
+            .unwrap()
+            .unwrap();
+        let spot = insert_spot(&pool, 1, campaign_id, "Spot", "a.mp4", "a.mp4", None)
+            .await
+            .unwrap()
+            .unwrap();
+
+        complete_spot(&pool, 1, spot, "commercials/spot-1.mp4", 30.0)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            select_eligible_spots(&pool, 1, "2026-10-15")
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        archive_campaign(&pool, 1, campaign_id).await.unwrap();
+
+        assert!(
+            select_eligible_spots(&pool, 1, "2026-10-15")
+                .await
+                .unwrap()
+                .is_empty()
         );
     }
 

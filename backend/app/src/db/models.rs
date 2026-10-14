@@ -962,6 +962,80 @@ impl BreakWindow {
     }
 }
 
+/// One program of a weekday in the weekly template.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct WeekTemplateItem {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub weekday: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub position: i32,
+    pub source: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub in_sec: f64,
+    pub out_sec: f64,
+    pub duration_sec: f64,
+}
+
+impl WeekTemplateItem {
+    /// Seconds of this program on the air.
+    pub fn airtime(&self) -> f64 {
+        self.out_sec - self.in_sec
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.source.trim().is_empty() {
+            return Err("program file must not be empty".to_string());
+        }
+
+        if !self.in_sec.is_finite() || self.in_sec < 0.0 {
+            return Err("the start point of a program must not be negative".to_string());
+        }
+
+        if !self.out_sec.is_finite() || self.out_sec <= self.in_sec {
+            return Err("the end point of a program must be after its start point".to_string());
+        }
+
+        if !self.duration_sec.is_finite() || self.duration_sec <= 0.0 {
+            return Err("the duration of a program is unknown".to_string());
+        }
+
+        if self.title.chars().count() > MAX_NAME_LENGTH {
+            return Err(format!(
+                "program title must not be longer than {MAX_NAME_LENGTH} characters"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// A spot that may be planned on a date, with what the planner needs to know
+/// about its campaign and advertiser.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct EligibleSpot {
+    pub spot_id: i32,
+    pub spot_title: String,
+    pub file_path: String,
+    pub duration_sec: f64,
+    pub campaign_id: i32,
+    pub campaign_name: String,
+    pub weight: i32,
+    pub max_per_day: Option<i32>,
+    pub position: BreakPosition,
+    pub advertiser_id: i32,
+    pub advertiser_name: String,
+}
+
 #[cfg(test)]
 mod commercial_tests {
     use super::*;
@@ -1140,6 +1214,29 @@ mod commercial_tests {
 
         item.max_per_day = Some(3);
         assert!(item.validate().is_ok());
+    }
+
+    #[test]
+    fn week_template_item_needs_a_file_and_a_positive_airtime() {
+        let item = |source: &str, in_sec: f64, out_sec: f64, duration_sec: f64| WeekTemplateItem {
+            id: 0,
+            channel_id: 1,
+            weekday: 1,
+            position: 0,
+            source: source.to_string(),
+            title: String::new(),
+            in_sec,
+            out_sec,
+            duration_sec,
+        };
+
+        assert!(item("show.mp4", 0.0, 1800.0, 1800.0).validate().is_ok());
+        assert_eq!(item("show.mp4", 60.0, 1800.0, 1800.0).airtime(), 1740.0);
+        assert!(item("  ", 0.0, 10.0, 10.0).validate().is_err());
+        assert!(item("show.mp4", -1.0, 10.0, 10.0).validate().is_err());
+        assert!(item("show.mp4", 10.0, 10.0, 10.0).validate().is_err());
+        assert!(item("show.mp4", 0.0, f64::NAN, 10.0).validate().is_err());
+        assert!(item("show.mp4", 0.0, 10.0, 0.0).validate().is_err());
     }
 
     #[test]
