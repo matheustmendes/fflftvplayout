@@ -1,4 +1,5 @@
 import commercial from './commercial/en-US.ts'
+import ux from './ux/en-US.ts'
 
 export default {
     ok: 'Ok',
@@ -10,6 +11,7 @@ export default {
         verificationSent: 'A verification code was sent to your email.',
     },
     commercial,
+    ...ux,
     button: {
         commercial: 'Commercials',
         login: 'Login',

@@ -156,7 +156,7 @@ watch(() => configStore.i, load)
                 </div>
                 {{ shortDate(report.header.date_from) }} — {{ shortDate(report.header.date_to) }}
             </div>
-            <div v-for="note in report.notes" :key="note" class="alert alert-warning text-black text-sm">
+            <div v-for="note in report.notes" :key="note" class="alert alert-warning text-sm">
                 {{ note }}
             </div>
             <p v-if="!report.days.length" class="opacity-70">{{ t('commercial.reports.none') }}</p>

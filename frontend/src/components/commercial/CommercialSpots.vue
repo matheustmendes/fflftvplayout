@@ -134,7 +134,7 @@ watch(() => configStore.i, loadAll)
         <section class="card bg-base-100 shadow p-4">
             <h2 class="font-bold text-lg mb-1">{{ t('commercial.spots.new') }}</h2>
             <p class="text-sm opacity-70 mb-3">{{ t('commercial.spots.help') }}</p>
-            <div v-if="!campaigns.length" class="alert alert-warning text-black">
+            <div v-if="!campaigns.length" class="alert alert-warning">
                 {{ t('commercial.spots.needCampaign') }}
             </div>
             <div v-else class="grid gap-3 md:grid-cols-2">

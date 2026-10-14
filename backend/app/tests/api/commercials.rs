@@ -1780,3 +1780,91 @@ async fn automatic_planning_is_configured_run_and_reported() {
         "a channel that turned it off is left alone"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn coverage_shows_which_upcoming_days_have_a_playlist_and_a_schedule() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+
+    // Only Thursday has a schedule.
+    prepare_thursday(&fixture, &admin, &operator).await;
+
+    let (status, days) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/coverage?days=8",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+    let list = days.as_array().unwrap();
+
+    assert_eq!(status, StatusCode::OK, "{days}");
+    assert_eq!(list.len(), 8);
+    assert_eq!(list[0]["on_air"], true);
+    assert!(list[1..].iter().all(|day| day["on_air"] == false));
+    assert!(list.iter().all(|day| day["playlist_exists"] == false));
+    assert_eq!(
+        list.iter()
+            .filter(|day| day["has_schedule"] == true)
+            .count(),
+        list.iter().filter(|day| day["weekday"] == 4).count(),
+        "only Thursdays have a schedule"
+    );
+
+    let (_, run) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/auto-plan/run",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+    let created = run
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|day| day["state"] == "created")
+        .count();
+    let (_, after) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/coverage?days=8",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(
+        after
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|day| day["playlist_exists"] == true)
+            .count(),
+        created,
+        "the days the planner created now have a playlist"
+    );
+
+    for (uri, status) in [(
+        "/api/commercials/1/coverage?days=abc",
+        StatusCode::BAD_REQUEST,
+    )] {
+        let (code, _) = send(&fixture, "GET", uri, Some(&operator), json!(null)).await;
+
+        assert_eq!(code, status, "{uri}");
+    }
+
+    let (code, _) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/coverage",
+        None,
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(code, StatusCode::UNAUTHORIZED);
+}

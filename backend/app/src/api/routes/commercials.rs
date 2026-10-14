@@ -9,7 +9,7 @@ use axum::{
     },
     response::{IntoResponse, Response},
 };
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 use protect_axum::authorities::AuthDetails;
 use serde::{Deserialize, Serialize};
 
@@ -29,7 +29,7 @@ use crate::{
     file::norm_abs_path,
     player::controller::ChannelManager,
     utils::{
-        auto_plan::{DayOutcome, active_playlist_date, ensure_upcoming_days},
+        auto_plan::{DayOutcome, active_playlist_date, ensure_upcoming_days, existing_playlist},
         commercial::{SpotRequest, register_spot, retry_spot, run_conversion, unique_conflict},
         day_plan::{
             PlanPreview, WeekItemInput, apply_plan, build_template_items, plan_for_date,
@@ -1118,4 +1118,90 @@ pub async fn run_auto_plan_now(
     let outcomes = ensure_upcoming_days(&state.pool, &config, channel, &name, Utc::now()).await?;
 
     Ok(Json(outcomes.into_iter().map(AutoPlanRun::from).collect()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CoverageQuery {
+    #[serde(default)]
+    pub days: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CoverageDay {
+    pub date: String,
+    /// ISO weekday: 1 = Monday ... 7 = Sunday.
+    pub weekday: i32,
+    /// The day has a playlist the channel can play.
+    pub playlist_exists: bool,
+    /// The weekly schedule has programs for the weekday, so the day can be planned.
+    pub has_schedule: bool,
+    /// What the automatic planner did with the day, when it looked at it.
+    pub auto_state: Option<AutoPlanState>,
+    /// The day on the air.
+    pub on_air: bool,
+}
+
+const COVERAGE_DEFAULT_DAYS: i64 = 14;
+const COVERAGE_MAX_DAYS: i64 = 60;
+
+/// **Coverage of the upcoming days**
+///
+/// For each day from the one on the air: does it have a playlist, and could it
+/// be planned from the weekly schedule. Used to show the days without
+/// programming in red.
+///
+/// ```BASH
+/// curl -X GET 'http://127.0.0.1:8787/api/commercials/1/coverage?days=14' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_coverage(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    Query(query): Query<CoverageQuery>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<Vec<CoverageDay>>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    let days = query
+        .days
+        .unwrap_or(COVERAGE_DEFAULT_DAYS)
+        .clamp(1, COVERAGE_MAX_DAYS);
+    let manager = channel_manager(&state, channel).await?;
+    let config = manager.config.read().await.clone();
+    let first = active_playlist_date(
+        Utc::now(),
+        config.channel.timezone.unwrap_or(chrono_tz::Tz::UTC),
+        config.playlist.start_sec.unwrap_or(0.0),
+    );
+    let last = first + chrono::Duration::days(days - 1);
+    let template = handles::select_week_template(&state.pool, channel, None).await?;
+    let known = handles::select_auto_plan_days(
+        &state.pool,
+        channel,
+        &first.format("%Y-%m-%d").to_string(),
+        &last.format("%Y-%m-%d").to_string(),
+    )
+    .await?;
+    let mut result = Vec::new();
+
+    for offset in 0..days {
+        let date = first + chrono::Duration::days(offset);
+        let date_text = date.format("%Y-%m-%d").to_string();
+        let weekday = date.weekday().number_from_monday() as i32;
+
+        result.push(CoverageDay {
+            playlist_exists: matches!(existing_playlist(&config, date).await, Ok(Some(_))),
+            has_schedule: template.iter().any(|item| item.weekday == weekday),
+            auto_state: known
+                .iter()
+                .find(|day| day.plan_date == date_text)
+                .map(|day| day.state),
+            on_air: offset == 0,
+            date: date_text,
+            weekday,
+        });
+    }
+
+    Ok(Json(result))
 }

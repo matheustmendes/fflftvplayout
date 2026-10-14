@@ -47,7 +47,8 @@ useHead({
 })
 
 const showHeader = computed(() => route.meta.showHeader === true)
-const mainClass = computed(() => (showHeader.value ? 'h-[calc(100%-52px)]' : 'h-full'))
+// On the phone the bottom bar needs room, so the page never hides behind it.
+const mainClass = computed(() => (showHeader.value ? 'h-[calc(100%-56px)] pb-16 md:pb-0' : 'h-full'))
 </script>
 <template>
     <div class="min-h-screen bg-base-200">

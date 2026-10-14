@@ -1,4 +1,5 @@
 import commercial from './commercial/pt-BR.ts'
+import ux from './ux/pt-BR.ts'
 
 export default {
     ok: 'Ok',
@@ -10,6 +11,7 @@ export default {
         verificationSent: 'Um código de verificação foi enviado para seu e-mail.',
     },
     commercial,
+    ...ux,
     button: {
         commercial: 'Comerciais',
         login: 'Logar',

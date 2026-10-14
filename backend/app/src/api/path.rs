@@ -63,6 +63,7 @@ pub fn routes() -> Router<AppState> {
                     get(preview_day_plan).post(apply_day_plan),
                 )
                 .route("/commercials/{id}/airlog", get(get_airlog))
+                .route("/commercials/{id}/coverage", get(get_coverage))
                 .route(
                     "/commercials/{id}/auto-plan",
                     get(get_auto_plan).put(update_auto_plan),

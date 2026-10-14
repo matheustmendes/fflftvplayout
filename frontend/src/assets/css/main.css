@@ -8,8 +8,8 @@
     default: false;
     color-scheme: light;
 
-    --color-primary: #e0e0e0;
-    --color-primary-content: #222222;
+    --color-primary: #2563eb;
+    --color-primary-content: #ffffff;
     --color-base-content: #222222;
     --color-secondary: #c7c7c7;
     --color-accent: #f28c1b;
@@ -18,10 +18,14 @@
     --color-base-300: #e5e6e6;
     --color-neutral: #2b3440;
     --color-neutral-focus: #343232;
-    --color-info: #0000ff;
-    --color-success: #008000;
-    --color-warning: #d87708;
-    --color-error: #b90202;
+    --color-info: #2563eb;
+    --color-info-content: #ffffff;
+    --color-success: #15803d;
+    --color-success-content: #ffffff;
+    --color-warning: #d97706;
+    --color-warning-content: #1f1300;
+    --color-error: #b91c1c;
+    --color-error-content: #ffffff;
     --base-100: #ffffff;
     --base-200: #f2f5f7;
     --base-300: #e5e6e6;
@@ -38,8 +42,8 @@
     default: true;
     color-scheme: dark;
 
-    --color-primary: #3b3b3b;
-    --color-primary-content: #dfdfdf;
+    --color-primary: #3b82f6;
+    --color-primary-content: #ffffff;
     --color-base-content: #dfdfdf;
     --color-secondary: #d3d3d3;
     --color-accent: #f28c1b;
@@ -48,10 +52,14 @@
     --color-base-300: #1c1c1c;
     --color-neutral: #272626;
     --color-neutral-focus: #343232;
-    --color-info: #0000ff;
-    --color-success: #008000;
-    --color-warning: #f28c1b;
-    --color-error: #ff3c00;
+    --color-info: #3b82f6;
+    --color-info-content: #ffffff;
+    --color-success: #16a34a;
+    --color-success-content: #ffffff;
+    --color-warning: #f59e0b;
+    --color-warning-content: #1f1300;
+    --color-error: #ef4444;
+    --color-error-content: #ffffff;
     --base-100: #313131;
     --base-200: #222222;
     --base-300: #1c1c1c;
@@ -70,8 +78,8 @@
     --breakpoint-2sm: 50rem;
     --breakpoint-2md: 56rem;
     --breakpoint-3xl: 120rem;
-    --text-sm: 14px;
-    --text-base: 15px;
+    --text-sm: 15px;
+    --text-base: 16px;
     --text-lg: 20px;
     --text-xl: 24px;
     --shadow-3xl: 0 1em 5em rgba(0, 0, 0, 0.3);

@@ -76,7 +76,7 @@ pub fn fingerprint(playlist: &JsonPlaylist) -> String {
     format!("{hash:016x}")
 }
 
-async fn existing_playlist(
+pub async fn existing_playlist(
     config: &PlayoutConfig,
     date: NaiveDate,
 ) -> Result<Option<JsonPlaylist>, ServiceError> {

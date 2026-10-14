@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 
 import GenericModal from '@/components/utils/GenericModal.vue'
 
@@ -24,7 +25,10 @@ const indexStore = useIndex()
 
 const canManage = computed(() => authStore.role !== 'user')
 const timezone = computed(() => configStore.timezone || 'UTC')
-const date = ref(todayInChannel(timezone.value))
+const route = useRoute()
+const requestedDate =
+    typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : ''
+const date = ref(requestedDate || todayInChannel(timezone.value))
 const preview = ref<PlanPreview | null>(null)
 const airings = ref<Airing[]>([])
 const autoPlan = ref<AutoPlanStatus | null>(null)
@@ -174,13 +178,13 @@ watch(() => configStore.i, load)
         </div>
 
         <div v-if="preview" class="space-y-2">
-            <div v-if="!preview.playlist_exists" class="alert alert-warning text-black">
+            <div v-if="!preview.playlist_exists" class="alert alert-warning">
                 <i class="bi bi-exclamation-triangle" /> {{ t('commercial.today.noPlaylist') }}
             </div>
             <div
                 v-for="(warning, index) in preview.plan.warnings"
                 :key="index"
-                class="alert text-black"
+                class="alert"
                 :class="warning.severity === 'error' ? 'alert-error' : 'alert-warning'"
             >
                 <i class="bi" :class="warning.severity === 'error' ? 'bi-x-octagon' : 'bi-exclamation-triangle'" />
