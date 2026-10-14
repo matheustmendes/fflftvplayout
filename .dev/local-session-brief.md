@@ -83,7 +83,9 @@ LOCAL (você): valida o que depende do mundo real, que a nuvem não alcança:
   aceite: .dev/acceptance/M6.md (usar com um operador de verdade).
 - M7 (montagem automática dos próximos dias) está implementada na nuvem. Roteiro
   de aceite: .dev/acceptance/M7.md.
-- Próxima etapa (na nuvem): Fase 1 (relay das 3 saídas, tentativas do supervisor).
+- Fase 1 (relay, reinício ≤ 10 s, alertas, HTTPS, backup) está feita na nuvem.
+  Falta validar no ambiente real: .dev/acceptance/F1.md e deploy/README.md.
+- Próxima etapa (na nuvem): depende do que a validação real mostrar.
 - Ainda NÃO existem: geração automática
   dos próximos dias nem telas do módulo (a grade se cadastra por JSON).
 

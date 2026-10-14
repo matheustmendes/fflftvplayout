@@ -385,4 +385,37 @@ dias do sistema mas não ao dia no ar, edição manual protegida, dia com falha
 isolado, canal desligado. Testes de HTTP (papéis, validação, execução e relatório).
 Conferido com servidor e navegador reais.
 
-## Próximo: Fase 1 (saída para os destinos) e validação com dados reais
+## Fase 1, operação confiável: feita na nuvem, falta validar no ambiente real
+
+- **1.2 Reinício rápido:** o teto de espera do supervisor caiu de 180 s para
+  **10 s** (`MAX_RESTART_DELAY`; esperas de 1, 2, 4, 8 e 10 s). Dez falhas
+  seguidas somam menos de 90 s de espera. Testes cobrem a sequência, o teto e a
+  volta ao início depois de uma execução longa. O `systemd` reinicia o processo
+  em 1 s e nunca desiste (`StartLimitIntervalSec=0`).
+- **1.3 Alertas:** um dia sem programação (o dia no ar e o seguinte, canais em
+  modo playlist) gera erro nas notificações, uma vez por dia; falha ao montar o
+  dia no ar ou o seguinte também. Vale mesmo com a montagem automática desligada.
+- **1.1 Relay:** `deploy/relay/mediamtx.yml` (publica só de 127.0.0.1, destinos
+  leem com senha por RTMP, SRT e HLS), unidades do systemd e guia em
+  `deploy/README.md`.
+- **1.4 HTTPS e backup:** `deploy/nginx/ffplayout.conf` (HTTPS no painel e no
+  m3u8 com senha) e `deploy/backup/ffplayout-backup.py` (banco com a API de
+  backup do SQLite, programações e pastas de marca, retenção e restauração).
+
+**Achado importante (medido):** quando o ffplayout para de enviar, o MediaMTX
+**desconecta todos os destinos**; eles precisam reconectar. A hipótese anterior
+("os destinos continuam conectados") era falsa. O corte que o destino vê é o
+reinício do ffplayout mais a reconexão dele, por isso o teto de 10 s e a
+conversa com os destinos sobre reconexão automática.
+
+Verificação (nuvem, MediaMTX compilado da branch principal): publicar e puxar
+por RTMP, SRT e HLS, com e sem senha; 12 destinos simultâneos (6 RTMP e 6 SRT)
+sem queda, relay a ~13 % de uma CPU e 62 MB; queda e volta do publicador;
+backup (criação, retenção, restauração, erros). Suíte do projeto com os testes
+novos.
+
+Não testado: versão estável do MediaMTX, nginx e certbot, a saída real do
+ffplayout (modo Stream) para o relay por horas, destinos reais e VPS real. Ver
+`.dev/acceptance/F1.md`.
+
+## Próximo: validar com a grade e os destinos reais; depois a Fase 4 (monitoramento e contingência)

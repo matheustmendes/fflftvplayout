@@ -1,0 +1,14 @@
+[Unit]
+Description=Backup do ffplayout (banco, programações e arquivos de marca)
+
+[Service]
+Type=oneshot
+User=ffpu
+# Ajuste os caminhos conforme a instalação (ver deploy/README.md).
+ExecStart=/usr/bin/python3 /opt/ffplayout/ffplayout-backup.py \
+    --db /var/lib/ffplayout/ffplayout.db \
+    --playlists /var/lib/ffplayout/playlists \
+    --storage /var/lib/ffplayout/storage \
+    --storage-dirs commercials,marca \
+    --dest /var/backups/ffplayout \
+    --keep 14

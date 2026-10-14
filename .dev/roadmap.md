@@ -35,9 +35,8 @@ de teste com o playout rodando.
 5. **Não existe lógica de comerciais** [verificado]. Só há o booleano `ad` em
    cada item, usado para o fade do logo e para marcar o item na grade
    (`player/input/playlist.rs:299`, `player/output/playout.rs:253`).
-6. **O supervisor tenta reiniciar com espera de até 180 s**
-   (`player/controller.rs:654`, `MAX_DELAY`). Isso passa da tolerância de
-   90 s do cliente.
+6. ~~O supervisor tenta reiniciar com espera de até 180 s~~ **Corrigido na
+   Fase 1**: o teto é de 10 s (`MAX_RESTART_DELAY`, `player/controller.rs`).
 7. **Grade sem horário fixo, geração só manual, atraso acumulado no modo
    Stream**: ver `.dev/scheduler.md`.
 
@@ -54,9 +53,13 @@ de teste com o playout rodando.
 - O relay (MediaMTX, SRS ou similar) recebe um sinal e o serve em vários
   protocolos e para vários clientes, sem recodificar. Resolve os achados 1 e 2
   sem alterar o engine.
-- Quando o ffplayout reinicia, os destinos continuam conectados ao relay.
-- A validação do relay escolhido precisa ser feita no ambiente real; ainda não
-  foi testada.
+- ~~Quando o ffplayout reinicia, os destinos continuam conectados ao relay.~~
+  **Medido na nuvem (MediaMTX): quando a fonte cai, o relay desconecta os
+  destinos RTMP e SRT**, e eles precisam reconectar. O que o destino vê é o
+  tempo de reinício do ffplayout (agora ≤ 10 s) mais o tempo de reconexão dele.
+- O relay foi testado na nuvem (publicar e puxar por RTMP, SRT e HLS, com
+  senha, 12 destinos ao mesmo tempo); falta a validação no ambiente real. Ver
+  `deploy/README.md`.
 - Alternativa futura: múltiplas saídas dentro do engine (codifica uma vez, vários
   muxers). Só vale se o relay se mostrar insuficiente.
 

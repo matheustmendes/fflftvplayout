@@ -1,0 +1,11 @@
+[Unit]
+Description=Backup diário do ffplayout
+
+[Timer]
+# Madrugada, longe dos intervalos e da virada do dia.
+OnCalendar=*-*-* 03:20:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

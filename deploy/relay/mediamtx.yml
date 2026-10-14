@@ -1,0 +1,69 @@
+# Relay de distribuição do canal (MediaMTX).
+#
+# O ffplayout envia UM sinal (RTMP) para cá, ao lado, em 127.0.0.1. O relay o
+# serve, sem recodificar, para os destinos por RTMP, SRT e HLS (m3u8). Quando o
+# ffplayout reinicia, os destinos continuam conectados ao relay.
+#
+# Trocar SENHA_DOS_DESTINOS antes de usar (ver deploy/README.md).
+
+logLevel: info
+
+# Sem API, métricas, RTSP, WebRTC nem gravação: só o que a emissora usa.
+api: no
+metrics: no
+pprof: no
+rtsp: no
+webrtc: no
+playback: no
+
+# --- RTMP: destinos puxam rtmp://HOST:1935/canal1?user=destino&pass=SENHA ---
+rtmp: yes
+rtmpAddress: :1935
+rtmpEncryption: "no"
+
+# --- SRT: destinos puxam srt://HOST:8890?streamid=read:canal1:destino:SENHA ---
+srt: yes
+srtAddress: :8890
+
+# --- HLS (m3u8): http://HOST:8888/canal1/index.m3u8 (atrás do nginx com HTTPS) ---
+hls: yes
+hlsAddress: 127.0.0.1:8888
+hlsAlwaysRemux: yes
+# mpegts é o formato mais aceito por players e redistribuidores.
+hlsVariant: mpegts
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s
+
+# Se o ffplayout cair, o destino espera o sinal voltar em vez de ser desligado.
+readTimeout: 10s
+writeTimeout: 10s
+
+# --- Quem pode fazer o quê ---
+authMethod: internal
+authInternalUsers:
+  # O ffplayout publica só a partir desta máquina, sem senha.
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: publish
+        path: canal1
+  # O nginx (HTTPS do m3u8) lê daqui mesmo, sem senha; quem pede senha é o nginx.
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: read
+        path: canal1
+  # Os destinos só leem, com usuário e senha.
+  - user: destino
+    pass: SENHA_DOS_DESTINOS
+    ips: []
+    permissions:
+      - action: read
+        path: canal1
+
+paths:
+  # O sinal do canal. Fica à espera do ffplayout.
+  canal1:
+    source: publisher

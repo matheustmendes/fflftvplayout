@@ -6,7 +6,7 @@
 //! tomorrow). It never touches the day on the air, nor a playlist somebody
 //! else wrote or edited: an operator's work always wins.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Duration as ChronoDuration, NaiveDate, Utc};
 use chrono_tz::Tz;
@@ -22,9 +22,10 @@ use crate::{
     db::{handles, models::AutoPlanState},
     player::{controller::ChannelController, utils::JsonPlaylist},
     utils::{
-        config::PlayoutConfig,
+        config::{PlayoutConfig, ProcessMode},
         day_plan::{apply_plan, plan_for_date, plan_to_playlist},
         errors::ServiceError,
+        logging::Target,
         playlist::read_playlist,
     },
 };
@@ -34,6 +35,9 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(600);
 
 /// The channels finish starting before the first look.
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(30);
+
+/// The day on the air and this many days after it must have a playlist.
+const MISSING_PLAYLIST_DAYS_AHEAD: i64 = 1;
 
 /// Records of the planner are kept this many days.
 const HISTORY_DAYS: i64 = 30;
@@ -203,6 +207,11 @@ pub async fn ensure_upcoming_days(
                 AutoPlanState::Created | AutoPlanState::Updated => {
                     info!(channel = channel_id; "Planned {date_text} automatically: {message}");
                 }
+                // The day on the air and tomorrow reach the notifications (mail);
+                // a day further ahead only the log.
+                AutoPlanState::Failed if offset <= 1 => {
+                    error!(target: Target::All.as_str(), channel = channel_id; "Cannot plan {date_text} automatically: {message}");
+                }
                 AutoPlanState::Failed => {
                     warn!(channel = channel_id; "Cannot plan {date_text} automatically: {message}");
                 }
@@ -222,6 +231,46 @@ pub async fn ensure_upcoming_days(
     Ok(outcomes)
 }
 
+/// The days with no playlist among the one on the air and the next
+/// `days_ahead`, for a channel that plays playlists.
+pub async fn days_without_playlist(
+    config: &PlayoutConfig,
+    now: DateTime<Utc>,
+    days_ahead: i64,
+) -> Vec<NaiveDate> {
+    if config.processing.mode != ProcessMode::Playlist {
+        return Vec::new();
+    }
+
+    let timezone = config.channel.timezone.unwrap_or(Tz::UTC);
+    let first = active_playlist_date(now, timezone, config.playlist.start_sec.unwrap_or(0.0));
+    let mut missing = Vec::new();
+
+    for offset in 0..=days_ahead {
+        let date = first + ChronoDuration::days(offset);
+
+        if matches!(existing_playlist(config, date).await, Ok(None)) {
+            missing.push(date);
+        }
+    }
+
+    missing
+}
+
+/// Raise an alert for each day that has no playlist, once per day and channel.
+async fn alert_missing_playlists(
+    config: &PlayoutConfig,
+    channel_id: i32,
+    now: DateTime<Utc>,
+    alerted: &mut HashSet<(i32, NaiveDate)>,
+) {
+    for date in days_without_playlist(config, now, MISSING_PLAYLIST_DAYS_AHEAD).await {
+        if alerted.insert((channel_id, date)) {
+            error!(target: Target::All.as_str(), channel = channel_id; "There is no playlist for {date}: the channel will play the filler");
+        }
+    }
+}
+
 /// Look at every channel now and then until `shutdown`.
 pub async fn run_auto_plan(
     pool: SqlitePool,
@@ -234,6 +283,7 @@ pub async fn run_auto_plan(
     }
 
     let mut ticker = interval(CHECK_INTERVAL);
+    let mut alerted = HashSet::new();
 
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -253,7 +303,15 @@ pub async fn run_auto_plan(
             if let Err(error) = ensure_upcoming_days(&pool, &config, manager.id, &name, now).await {
                 error!(channel = manager.id; "Cannot check the upcoming days: {error}");
             }
+
+            // This also covers a channel that turned the automatic planning off.
+            alert_missing_playlists(&config, manager.id, now, &mut alerted).await;
         }
+
+        // Alerts of past days are not needed again.
+        let today = now.date_naive() - ChronoDuration::days(2);
+
+        alerted.retain(|(_, date)| *date >= today);
 
         let cutoff = (now - ChronoDuration::days(HISTORY_DAYS))
             .format("%Y-%m-%d")
@@ -686,6 +744,33 @@ mod tests {
             .unwrap();
 
         assert_eq!(stored[0].state, AutoPlanState::Failed);
+    }
+
+    #[tokio::test]
+    async fn days_without_a_playlist_are_found_for_the_day_on_the_air_and_tomorrow() {
+        let fixture = fixture().await;
+
+        assert_eq!(
+            days_without_playlist(&fixture.config, now(), 1).await,
+            [date("2026-10-15"), date("2026-10-16")]
+        );
+
+        set_horizon(&fixture, true, 1).await;
+        run(&fixture).await;
+
+        assert!(
+            days_without_playlist(&fixture.config, now(), 1)
+                .await
+                .is_empty()
+        );
+
+        // Folder mode needs no playlist.
+        let mut folder = fixture.config.clone();
+
+        folder.processing.mode = ProcessMode::Folder;
+        std::fs::remove_dir_all(&folder.channel.playlists).unwrap();
+
+        assert!(days_without_playlist(&folder, now(), 1).await.is_empty());
     }
 
     #[tokio::test]

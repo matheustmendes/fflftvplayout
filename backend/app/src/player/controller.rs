@@ -645,15 +645,52 @@ impl ChannelController {
     }
 }
 
+/// The longest wait before a failed channel is started again. The station
+/// tolerates 90 seconds without signal, and every restart already costs the
+/// time the engine needs to open its output, so the wait must stay short.
+pub(crate) const MAX_RESTART_DELAY: Duration = Duration::from_secs(10);
+
+/// A run shorter than this counts as a quick failure when the channel starts.
+const INITIAL_QUICK_RUN: Duration = Duration::from_secs(5);
+
+/// How long the supervisor waits before it restarts a channel that failed:
+/// the wait doubles while the channel keeps failing quickly, up to
+/// [`MAX_RESTART_DELAY`], and starts again at one second after a long run.
+#[derive(Debug, Clone)]
+pub(crate) struct RestartBackoff {
+    quick_run: Duration,
+    delay: Duration,
+}
+
+impl RestartBackoff {
+    pub(crate) fn new() -> Self {
+        Self {
+            quick_run: INITIAL_QUICK_RUN,
+            delay: Duration::from_millis(500),
+        }
+    }
+
+    /// The wait after a run that lasted `ran_for` and failed.
+    pub(crate) fn next_delay(&mut self, ran_for: Duration) -> Duration {
+        if ran_for < self.quick_run {
+            self.quick_run += self.delay;
+            self.delay = cmp::min(self.delay * 2, MAX_RESTART_DELAY);
+        } else {
+            self.quick_run = INITIAL_QUICK_RUN;
+            self.delay = Duration::from_secs(1);
+        }
+
+        self.delay
+    }
+}
+
 async fn supervisor_loop(
     manager: ChannelManager,
     token: CancellationToken,
     channel_id: i32,
     generation: usize,
 ) {
-    const MAX_DELAY: Duration = Duration::from_secs(180);
-    let mut elapsed = Duration::from_secs(5);
-    let mut retry_delay = Duration::from_millis(500);
+    let mut backoff = RestartBackoff::new();
 
     loop {
         if token.is_cancelled() {
@@ -685,13 +722,7 @@ async fn supervisor_loop(
                 break;
             }
 
-            if timer.elapsed() < elapsed {
-                elapsed += retry_delay;
-                retry_delay = cmp::min(retry_delay * 2, MAX_DELAY);
-            } else {
-                elapsed = Duration::from_secs(5);
-                retry_delay = Duration::from_secs(1);
-            }
+            let retry_delay = backoff.next_delay(timer.elapsed());
 
             let retry_msg = format!(
                 "Retry in <span class=\"log-number\">{}</span> seconds",
@@ -801,6 +832,53 @@ mod tests {
     use crate::test_support::channel_manager;
 
     use super::*;
+
+    #[test]
+    fn restarts_back_off_quickly_and_never_wait_past_the_cap() {
+        let mut backoff = RestartBackoff::new();
+        let quick = Duration::from_millis(200);
+        let waits: Vec<u64> = (0..8)
+            .map(|_| backoff.next_delay(quick).as_secs())
+            .collect();
+
+        assert_eq!(waits, [1, 2, 4, 8, 10, 10, 10, 10]);
+        assert!(
+            waits
+                .iter()
+                .all(|wait| *wait <= MAX_RESTART_DELAY.as_secs())
+        );
+    }
+
+    #[test]
+    fn a_channel_that_failed_quickly_for_a_while_is_back_well_inside_the_tolerance() {
+        let mut backoff = RestartBackoff::new();
+        let mut waited = Duration::ZERO;
+
+        // Ten failures in a row, each after a second of work.
+        for _ in 0..10 {
+            waited += backoff.next_delay(Duration::from_secs(1));
+        }
+
+        assert!(waited < Duration::from_secs(90), "{waited:?}");
+    }
+
+    #[test]
+    fn a_long_run_starts_the_backoff_again() {
+        let mut backoff = RestartBackoff::new();
+
+        for _ in 0..6 {
+            backoff.next_delay(Duration::from_millis(100));
+        }
+
+        assert_eq!(
+            backoff.next_delay(Duration::from_secs(600)),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            backoff.next_delay(Duration::from_millis(100)),
+            Duration::from_secs(2)
+        );
+    }
 
     #[tokio::test]
     async fn failed_start_restores_not_running_state() {

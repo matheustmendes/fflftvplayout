@@ -1,0 +1,19 @@
+[Unit]
+Description=ffplayout (playout 24/7 da emissora)
+# O relay precisa estar de pé: o ffplayout envia o sinal para ele.
+After=network.target remote-fs.target mediamtx.service
+Wants=mediamtx.service
+# Nunca desistir de reiniciar.
+StartLimitIntervalSec=0
+
+[Service]
+# A interface e a API só escutam em 127.0.0.1; o nginx faz o HTTPS na frente.
+ExecStart=/usr/bin/ffplayout -l 127.0.0.1:8787
+Restart=always
+# O systemd é a segunda linha de defesa: se o processo inteiro morrer, volta em 1 s.
+RestartSec=1
+KillMode=mixed
+User=ffpu
+
+[Install]
+WantedBy=multi-user.target

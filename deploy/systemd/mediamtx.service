@@ -1,0 +1,20 @@
+[Unit]
+Description=Relay do canal (MediaMTX): serve o sinal do ffplayout por RTMP, SRT e HLS
+After=network.target
+
+[Service]
+# Ajuste o caminho do binário e do arquivo de configuração.
+ExecStart=/opt/mediamtx/mediamtx /etc/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=1
+User=mediamtx
+Group=mediamtx
+# O relay não precisa de nada além da rede.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
