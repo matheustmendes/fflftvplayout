@@ -1,5 +1,6 @@
 use std::{error::Error, fmt, str::FromStr};
 
+use chrono::{NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -661,4 +662,388 @@ pub(crate) struct SetupRollback {
     pub channel: Channel,
     pub active_outputs: Vec<i32>,
     pub user_id: i32,
+}
+
+const DATE_FORMAT: &str = "%Y-%m-%d";
+const TIME_FORMAT: &str = "%H:%M:%S";
+const MAX_NAME_LENGTH: usize = 120;
+const MAX_BREAK_SECONDS: i64 = 3600;
+
+const fn active_by_default() -> bool {
+    true
+}
+
+fn validate_name(label: &str, name: &str) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err(format!("{label} must not be empty"));
+    }
+
+    if name.chars().count() > MAX_NAME_LENGTH {
+        return Err(format!(
+            "{label} must not be longer than {MAX_NAME_LENGTH} characters"
+        ));
+    }
+
+    Ok(())
+}
+
+fn parse_date(label: &str, value: &str) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(value, DATE_FORMAT)
+        .map_err(|_| format!("{label} must be a date in the format YYYY-MM-DD"))
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct Advertiser {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    pub name: String,
+    #[serde(default)]
+    pub contact_name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub notes: String,
+    #[serde(default = "active_by_default")]
+    pub active: bool,
+}
+
+impl Advertiser {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_name("advertiser name", &self.name)?;
+
+        let email = self.email.trim();
+
+        if !email.is_empty() && !email.contains('@') {
+            return Err("advertiser email is not valid".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum CampaignKind {
+    #[default]
+    Campaign,
+    Standalone,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum BreakPosition {
+    #[default]
+    Any,
+    First,
+    Last,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct Campaign {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    pub advertiser_id: i32,
+    pub name: String,
+    #[serde(default)]
+    pub kind: CampaignKind,
+    #[serde(default)]
+    pub start_date: Option<String>,
+    #[serde(default)]
+    pub end_date: Option<String>,
+    #[serde(default = "active_by_default")]
+    pub active: bool,
+    #[serde(default = "default_campaign_weight")]
+    pub weight: i32,
+    #[serde(default)]
+    pub max_per_day: Option<i32>,
+    #[serde(default)]
+    pub position: BreakPosition,
+}
+
+const fn default_campaign_weight() -> i32 {
+    1
+}
+
+impl Campaign {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_name("campaign name", &self.name)?;
+
+        if self.weight < 1 {
+            return Err("campaign weight must be at least 1".to_string());
+        }
+
+        if self.max_per_day.is_some_and(|limit| limit < 1) {
+            return Err("daily limit must be at least 1".to_string());
+        }
+
+        let start = self
+            .start_date
+            .as_deref()
+            .map(|date| parse_date("start date", date))
+            .transpose()?;
+        let end = self
+            .end_date
+            .as_deref()
+            .map(|date| parse_date("end date", date))
+            .transpose()?;
+
+        if self.kind == CampaignKind::Campaign && (start.is_none() || end.is_none()) {
+            return Err("a campaign needs a start date and an end date".to_string());
+        }
+
+        if let (Some(start), Some(end)) = (start, end)
+            && start > end
+        {
+            return Err("the end date must not be before the start date".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum SpotStatus {
+    #[default]
+    Processing,
+    Ready,
+    Failed,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct Spot {
+    pub id: i32,
+    pub channel_id: i32,
+    pub campaign_id: i32,
+    pub title: String,
+    pub file_path: String,
+    pub original_filename: String,
+    pub duration_sec: Option<f64>,
+    pub status: SpotStatus,
+    pub error: String,
+    pub active: bool,
+    pub created_by: Option<i32>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct BreakWindow {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    pub weekday: i32,
+    pub nominal_time: String,
+    pub duration_sec: i32,
+    #[serde(default = "default_break_tolerance")]
+    pub tolerance_sec: i32,
+    #[serde(default = "active_by_default")]
+    pub enabled: bool,
+}
+
+const fn default_break_tolerance() -> i32 {
+    60
+}
+
+impl BreakWindow {
+    /// Validate the window and rewrite its time in the canonical `HH:MM:SS`
+    /// form that the database constraint and the planner expect.
+    pub fn validate(&mut self) -> Result<(), String> {
+        if !(1..=7).contains(&self.weekday) {
+            return Err("weekday must be between 1 (Monday) and 7 (Sunday)".to_string());
+        }
+
+        let time = NaiveTime::parse_from_str(self.nominal_time.trim(), TIME_FORMAT)
+            .map_err(|_| "break time must be in the format HH:MM:SS".to_string())?;
+        self.nominal_time = time.format(TIME_FORMAT).to_string();
+
+        if !(1..=MAX_BREAK_SECONDS).contains(&i64::from(self.duration_sec)) {
+            return Err(format!(
+                "break duration must be between 1 and {MAX_BREAK_SECONDS} seconds"
+            ));
+        }
+
+        if !(0..=MAX_BREAK_SECONDS).contains(&i64::from(self.tolerance_sec)) {
+            return Err(format!(
+                "break tolerance must be between 0 and {MAX_BREAK_SECONDS} seconds"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod commercial_tests {
+    use super::*;
+
+    fn campaign(kind: CampaignKind, start: Option<&str>, end: Option<&str>) -> Campaign {
+        Campaign {
+            id: 0,
+            channel_id: 1,
+            advertiser_id: 1,
+            name: "Summer sale".to_string(),
+            kind,
+            start_date: start.map(str::to_string),
+            end_date: end.map(str::to_string),
+            active: true,
+            weight: 1,
+            max_per_day: None,
+            position: BreakPosition::Any,
+        }
+    }
+
+    fn window(weekday: i32, time: &str, duration: i32) -> BreakWindow {
+        BreakWindow {
+            id: 0,
+            channel_id: 1,
+            weekday,
+            nominal_time: time.to_string(),
+            duration_sec: duration,
+            tolerance_sec: 60,
+            enabled: true,
+        }
+    }
+
+    #[test]
+    fn advertiser_needs_a_name_and_a_plausible_email() {
+        let mut advertiser = Advertiser {
+            id: 0,
+            channel_id: 1,
+            name: "  ".to_string(),
+            contact_name: String::new(),
+            email: String::new(),
+            notes: String::new(),
+            active: true,
+        };
+
+        assert!(advertiser.validate().is_err());
+
+        advertiser.name = "Padaria Central".to_string();
+        assert!(advertiser.validate().is_ok());
+
+        advertiser.email = "not-an-email".to_string();
+        assert!(advertiser.validate().is_err());
+
+        advertiser.email = "contato@padaria.example".to_string();
+        assert!(advertiser.validate().is_ok());
+    }
+
+    #[test]
+    fn campaign_requires_both_dates_in_order() {
+        assert!(
+            campaign(
+                CampaignKind::Campaign,
+                Some("2026-10-01"),
+                Some("2026-10-31")
+            )
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            campaign(
+                CampaignKind::Campaign,
+                Some("2026-10-01"),
+                Some("2026-10-01")
+            )
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            campaign(CampaignKind::Campaign, None, None)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            campaign(CampaignKind::Campaign, Some("2026-10-01"), None)
+                .validate()
+                .is_err()
+        );
+        assert!(
+            campaign(
+                CampaignKind::Campaign,
+                Some("2026-11-01"),
+                Some("2026-10-31")
+            )
+            .validate()
+            .is_err()
+        );
+        assert!(
+            campaign(
+                CampaignKind::Campaign,
+                Some("01/10/2026"),
+                Some("2026-10-31")
+            )
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn standalone_campaign_may_omit_its_dates() {
+        assert!(
+            campaign(CampaignKind::Standalone, None, None)
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            campaign(
+                CampaignKind::Standalone,
+                Some("2026-11-01"),
+                Some("2026-10-31")
+            )
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn campaign_limits_must_be_positive() {
+        let mut item = campaign(CampaignKind::Standalone, None, None);
+
+        item.weight = 0;
+        assert!(item.validate().is_err());
+
+        item.weight = 2;
+        item.max_per_day = Some(0);
+        assert!(item.validate().is_err());
+
+        item.max_per_day = Some(3);
+        assert!(item.validate().is_ok());
+    }
+
+    #[test]
+    fn break_window_time_is_normalized() {
+        let mut item = window(3, " 20:00:00 ", 180);
+
+        assert!(item.validate().is_ok());
+        assert_eq!(item.nominal_time, "20:00:00");
+    }
+
+    #[test]
+    fn break_window_rejects_invalid_values() {
+        assert!(window(0, "20:00:00", 180).validate().is_err());
+        assert!(window(8, "20:00:00", 180).validate().is_err());
+        assert!(window(1, "24:00:00", 180).validate().is_err());
+        assert!(window(1, "20:00", 180).validate().is_err());
+        assert!(window(1, "20:00:00", 0).validate().is_err());
+        assert!(window(1, "20:00:00", 3601).validate().is_err());
+
+        let mut item = window(1, "20:00:00", 180);
+        item.tolerance_sec = -1;
+        assert!(item.validate().is_err());
+    }
 }

@@ -1,4 +1,5 @@
 pub mod channel;
+pub mod commercial;
 pub mod configuration;
 pub mod global;
 pub mod init;
@@ -11,6 +12,7 @@ pub mod source;
 pub mod user;
 
 pub use channel::*;
+pub use commercial::*;
 pub use configuration::*;
 pub use global::*;
 pub use init::*;
