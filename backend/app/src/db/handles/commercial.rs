@@ -1,7 +1,7 @@
 use sqlx::sqlite::SqlitePool;
 
 use crate::{
-    db::models::{Advertiser, BreakWindow, Campaign, Spot, SpotStatus},
+    db::models::{Advertiser, BreakWindow, Campaign, CommercialSettings, Spot, SpotStatus},
     utils::errors::ProcessError,
 };
 
@@ -297,9 +297,9 @@ pub async fn insert_spot(
     created_by: Option<i32>,
 ) -> Result<Option<i32>, ProcessError> {
     const QUERY: &str = "INSERT INTO spot (
-            channel_id, campaign_id, title, file_path, original_filename, created_by
+            channel_id, campaign_id, title, file_path, source_path, original_filename, created_by
         )
-        SELECT $1, campaign.id, $3, $4, $5, $6
+        SELECT $1, campaign.id, $3, $4, $4, $5, $6
         FROM campaign
         WHERE campaign.id = $2 AND campaign.channel_id = $1 AND campaign.active = 1
         RETURNING id";
@@ -340,6 +340,80 @@ pub async fn update_spot_status(
     Ok(result.rows_affected() == 1)
 }
 
+pub async fn update_spot_progress(
+    pool: &SqlitePool,
+    channel_id: i32,
+    id: i32,
+    progress: i32,
+) -> Result<(), ProcessError> {
+    sqlx::query(
+        "UPDATE spot SET progress = $1 WHERE channel_id = $2 AND id = $3 AND status = 'processing'",
+    )
+    .bind(progress.clamp(0, 100))
+    .bind(channel_id)
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Mark a spot as converted: `file_path` now points to the converted copy.
+pub async fn complete_spot(
+    pool: &SqlitePool,
+    channel_id: i32,
+    id: i32,
+    file_path: &str,
+    duration_sec: f64,
+) -> Result<bool, ProcessError> {
+    const QUERY: &str = "UPDATE spot
+        SET status = 'ready', progress = 100, error = '', file_path = $1, duration_sec = $2
+        WHERE channel_id = $3 AND id = $4";
+
+    let result = sqlx::query(QUERY)
+        .bind(file_path)
+        .bind(duration_sec)
+        .bind(channel_id)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected() == 1)
+}
+
+/// Put a failed spot back to `processing` so its conversion can run again,
+/// for example after the audio mapping was changed. Returns `false` when the
+/// spot is missing, archived, or not in the `failed` state.
+pub async fn restart_spot_conversion(
+    pool: &SqlitePool,
+    channel_id: i32,
+    id: i32,
+) -> Result<bool, ProcessError> {
+    const QUERY: &str = "UPDATE spot
+        SET status = 'processing', progress = 0, error = '', duration_sec = NULL, file_path = source_path
+        WHERE channel_id = $1 AND id = $2 AND active = 1 AND status = 'failed'";
+
+    let result = sqlx::query(QUERY)
+        .bind(channel_id)
+        .bind(id)
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected() == 1)
+}
+
+/// A conversion cannot survive a restart of the program. Mark what was still
+/// running as failed, so the operator can retry it instead of waiting forever.
+pub async fn fail_interrupted_spots(pool: &SqlitePool) -> Result<u64, ProcessError> {
+    const QUERY: &str = "UPDATE spot
+        SET status = 'failed', progress = 0, error = 'the conversion was interrupted by a restart'
+        WHERE status = 'processing'";
+
+    let result = sqlx::query(QUERY).execute(pool).await?;
+
+    Ok(result.rows_affected())
+}
+
 pub async fn archive_spot(
     pool: &SqlitePool,
     channel_id: i32,
@@ -352,6 +426,52 @@ pub async fn archive_spot(
         .await?;
 
     Ok(result.rows_affected() == 1)
+}
+
+/// The settings of a channel, or the defaults when none were saved yet.
+pub async fn select_commercial_settings(
+    pool: &SqlitePool,
+    channel_id: i32,
+) -> Result<CommercialSettings, ProcessError> {
+    const QUERY: &str = "SELECT * FROM commercial_settings WHERE channel_id = $1";
+
+    let stored: Option<CommercialSettings> = sqlx::query_as(QUERY)
+        .bind(channel_id)
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(stored.unwrap_or(CommercialSettings {
+        channel_id,
+        ..CommercialSettings::default()
+    }))
+}
+
+pub async fn upsert_commercial_settings(
+    pool: &SqlitePool,
+    channel_id: i32,
+    settings: &CommercialSettings,
+) -> Result<(), ProcessError> {
+    const QUERY: &str = "INSERT INTO commercial_settings (
+            channel_id, audio_mapping, loudness_enabled, loudness_target_lufs,
+            loudness_true_peak_dbtp
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (channel_id) DO UPDATE SET
+            audio_mapping = excluded.audio_mapping,
+            loudness_enabled = excluded.loudness_enabled,
+            loudness_target_lufs = excluded.loudness_target_lufs,
+            loudness_true_peak_dbtp = excluded.loudness_true_peak_dbtp";
+
+    sqlx::query(QUERY)
+        .bind(channel_id)
+        .bind(settings.audio_mapping)
+        .bind(settings.loudness_enabled)
+        .bind(settings.loudness_target_lufs)
+        .bind(settings.loudness_true_peak_dbtp)
+        .execute(pool)
+        .await?;
+
+    Ok(())
 }
 
 pub async fn select_break_windows(
@@ -731,6 +851,209 @@ mod tests {
             !update_spot_status(&pool, 2, id, SpotStatus::Failed, None, "x")
                 .await
                 .unwrap()
+        );
+    }
+
+    async fn spot_in_campaign(pool: &SqlitePool, file: &str) -> i32 {
+        let advertiser_id = insert_advertiser(pool, 1, &advertiser(file)).await.unwrap();
+        let campaign_id = insert_campaign(pool, 1, &campaign(advertiser_id, file))
+            .await
+            .unwrap()
+            .unwrap();
+
+        insert_spot(pool, 1, campaign_id, "Spot", file, "original.mxf", None)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_new_spot_remembers_its_uploaded_source() {
+        let pool = pool().await;
+        let id = spot_in_campaign(&pool, "upload/a.mxf").await;
+        let spot = select_spot(&pool, 1, id).await.unwrap().unwrap();
+
+        assert_eq!(spot.source_path, "upload/a.mxf");
+        assert_eq!(spot.file_path, "upload/a.mxf");
+        assert_eq!(spot.progress, 0);
+    }
+
+    #[tokio::test]
+    async fn completing_a_spot_switches_to_the_converted_file() {
+        let pool = pool().await;
+        let id = spot_in_campaign(&pool, "upload/a.mxf").await;
+
+        update_spot_progress(&pool, 1, id, 40).await.unwrap();
+
+        assert_eq!(
+            select_spot(&pool, 1, id).await.unwrap().unwrap().progress,
+            40
+        );
+
+        assert!(
+            complete_spot(&pool, 1, id, "commercials/spot-1.mp4", 29.5)
+                .await
+                .unwrap()
+        );
+
+        let spot = select_spot(&pool, 1, id).await.unwrap().unwrap();
+
+        assert_eq!(spot.status, SpotStatus::Ready);
+        assert_eq!(spot.file_path, "commercials/spot-1.mp4");
+        assert_eq!(spot.source_path, "upload/a.mxf");
+        assert_eq!(spot.progress, 100);
+        assert_eq!(spot.duration_sec, Some(29.5));
+
+        update_spot_progress(&pool, 1, id, 5).await.unwrap();
+
+        assert_eq!(
+            select_spot(&pool, 1, id).await.unwrap().unwrap().progress,
+            100,
+            "progress only moves while processing"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_same_upload_cannot_be_registered_again_after_conversion() {
+        let pool = pool().await;
+        let id = spot_in_campaign(&pool, "upload/a.mxf").await;
+
+        complete_spot(&pool, 1, id, "commercials/spot-1.mp4", 30.0)
+            .await
+            .unwrap();
+
+        let advertiser_id = insert_advertiser(&pool, 1, &advertiser("Other"))
+            .await
+            .unwrap();
+        let campaign_id = insert_campaign(&pool, 1, &campaign(advertiser_id, "Other"))
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            insert_spot(
+                &pool,
+                1,
+                campaign_id,
+                "Again",
+                "upload/a.mxf",
+                "a.mxf",
+                None
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn only_a_failed_spot_can_be_restarted() {
+        let pool = pool().await;
+        let id = spot_in_campaign(&pool, "upload/a.mxf").await;
+
+        assert!(!restart_spot_conversion(&pool, 1, id).await.unwrap());
+
+        update_spot_status(&pool, 1, id, SpotStatus::Failed, None, "no audio")
+            .await
+            .unwrap();
+
+        assert!(!restart_spot_conversion(&pool, 2, id).await.unwrap());
+        assert!(restart_spot_conversion(&pool, 1, id).await.unwrap());
+
+        let spot = select_spot(&pool, 1, id).await.unwrap().unwrap();
+
+        assert_eq!(spot.status, SpotStatus::Processing);
+        assert!(spot.error.is_empty());
+        assert_eq!(spot.progress, 0);
+    }
+
+    #[tokio::test]
+    async fn interrupted_conversions_are_marked_failed() {
+        let pool = pool().await;
+        let running = spot_in_campaign(&pool, "upload/a.mxf").await;
+        let finished = spot_in_campaign(&pool, "upload/b.mxf").await;
+
+        complete_spot(&pool, 1, finished, "commercials/spot-2.mp4", 10.0)
+            .await
+            .unwrap();
+
+        assert_eq!(fail_interrupted_spots(&pool).await.unwrap(), 1);
+        assert_eq!(
+            select_spot(&pool, 1, running)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            SpotStatus::Failed
+        );
+        assert_eq!(
+            select_spot(&pool, 1, finished)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            SpotStatus::Ready
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_fall_back_to_defaults_and_can_be_saved() {
+        let pool = pool().await;
+
+        sqlx::query("DELETE FROM commercial_settings")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let defaults = select_commercial_settings(&pool, 1).await.unwrap();
+
+        assert_eq!(defaults.channel_id, 1);
+        assert_eq!(defaults.loudness_target_lufs, -24.0);
+
+        let changed = CommercialSettings {
+            audio_mapping: crate::db::models::AudioMapping::FirstTwoMono,
+            loudness_enabled: false,
+            loudness_target_lufs: -23.0,
+            loudness_true_peak_dbtp: -1.0,
+            ..defaults
+        };
+
+        upsert_commercial_settings(&pool, 1, &changed)
+            .await
+            .unwrap();
+        upsert_commercial_settings(&pool, 1, &changed)
+            .await
+            .unwrap();
+
+        let stored = select_commercial_settings(&pool, 1).await.unwrap();
+
+        assert_eq!(
+            stored.audio_mapping,
+            crate::db::models::AudioMapping::FirstTwoMono
+        );
+        assert!(!stored.loudness_enabled);
+        assert_eq!(stored.loudness_target_lufs, -23.0);
+        assert_eq!(
+            select_commercial_settings(&pool, 2)
+                .await
+                .unwrap()
+                .audio_mapping,
+            crate::db::models::AudioMapping::Auto,
+            "other channels keep the defaults"
+        );
+    }
+
+    #[tokio::test]
+    async fn database_rejects_loudness_values_out_of_range() {
+        let pool = pool().await;
+        let invalid = CommercialSettings {
+            loudness_target_lufs: 3.0,
+            ..CommercialSettings::default()
+        };
+
+        assert!(
+            upsert_commercial_settings(&pool, 1, &invalid)
+                .await
+                .is_err()
         );
     }
 

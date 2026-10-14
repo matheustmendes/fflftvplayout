@@ -827,14 +827,90 @@ pub struct Spot {
     pub channel_id: i32,
     pub campaign_id: i32,
     pub title: String,
+    /// The file the engine plays. While the spot is converting it is the
+    /// uploaded file; afterwards it is the converted copy.
     pub file_path: String,
     pub original_filename: String,
+    /// The uploaded file, kept as it was sent.
+    pub source_path: String,
     pub duration_sec: Option<f64>,
     pub status: SpotStatus,
+    /// Conversion progress from 0 to 100.
+    pub progress: i32,
     pub error: String,
     pub active: bool,
     pub created_by: Option<i32>,
     pub created_at: String,
+}
+
+/// How the audio tracks of an uploaded file become the stereo program.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum AudioMapping {
+    /// One track: use it. Several mono tracks (typical MXF): the first two as
+    /// left and right. Otherwise the first track.
+    #[default]
+    Auto,
+    FirstStream,
+    FirstTwoMono,
+    MixAll,
+}
+
+/// Per-channel settings for converting uploaded spots.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct CommercialSettings {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    #[serde(default)]
+    pub audio_mapping: AudioMapping,
+    #[serde(default = "active_by_default")]
+    pub loudness_enabled: bool,
+    /// Integrated loudness target in LUFS (LKFS).
+    #[serde(default = "default_loudness_target")]
+    pub loudness_target_lufs: f64,
+    /// True-peak ceiling in dBTP.
+    #[serde(default = "default_true_peak")]
+    pub loudness_true_peak_dbtp: f64,
+}
+
+const fn default_loudness_target() -> f64 {
+    -24.0
+}
+
+const fn default_true_peak() -> f64 {
+    -2.0
+}
+
+impl Default for CommercialSettings {
+    fn default() -> Self {
+        Self {
+            channel_id: 0,
+            audio_mapping: AudioMapping::default(),
+            loudness_enabled: true,
+            loudness_target_lufs: default_loudness_target(),
+            loudness_true_peak_dbtp: default_true_peak(),
+        }
+    }
+}
+
+impl CommercialSettings {
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.loudness_target_lufs.is_finite()
+            || !(-70.0..=-5.0).contains(&self.loudness_target_lufs)
+        {
+            return Err("loudness target must be between -70 and -5 LUFS".to_string());
+        }
+
+        if !self.loudness_true_peak_dbtp.is_finite()
+            || !(-20.0..=0.0).contains(&self.loudness_true_peak_dbtp)
+        {
+            return Err("true-peak ceiling must be between -20 and 0 dBTP".to_string());
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
@@ -889,6 +965,47 @@ impl BreakWindow {
 #[cfg(test)]
 mod commercial_tests {
     use super::*;
+
+    #[test]
+    fn settings_default_to_the_brazilian_loudness_target() {
+        let settings = CommercialSettings::default();
+
+        assert_eq!(settings.audio_mapping, AudioMapping::Auto);
+        assert!(settings.loudness_enabled);
+        assert_eq!(settings.loudness_target_lufs, -24.0);
+        assert!(settings.validate().is_ok());
+    }
+
+    #[test]
+    fn settings_reject_values_outside_their_range() {
+        for target in [-80.0, -4.0, f64::NAN, f64::INFINITY] {
+            let settings = CommercialSettings {
+                loudness_target_lufs: target,
+                ..CommercialSettings::default()
+            };
+
+            assert!(settings.validate().is_err(), "target {target}");
+        }
+
+        for peak in [0.5, -21.0, f64::NAN] {
+            let settings = CommercialSettings {
+                loudness_true_peak_dbtp: peak,
+                ..CommercialSettings::default()
+            };
+
+            assert!(settings.validate().is_err(), "peak {peak}");
+        }
+    }
+
+    #[test]
+    fn settings_accept_a_partial_body_with_defaults() {
+        let settings: CommercialSettings =
+            serde_json::from_str(r#"{ "audio_mapping": "first_two_mono" }"#).unwrap();
+
+        assert_eq!(settings.audio_mapping, AudioMapping::FirstTwoMono);
+        assert_eq!(settings.loudness_target_lufs, -24.0);
+        assert!(settings.loudness_enabled);
+    }
 
     fn campaign(kind: CampaignKind, start: Option<&str>, end: Option<&str>) -> Campaign {
         Campaign {
