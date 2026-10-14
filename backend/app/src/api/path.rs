@@ -56,6 +56,14 @@ pub fn routes() -> Router<AppState> {
                 .route("/commercials/{id}/spots", get(get_spots).post(add_spot))
                 .route("/commercials/{id}/spots/{spot}", delete(remove_spot))
                 .route(
+                    "/commercials/{id}/spots/{spot}/retry",
+                    post(retry_spot_conversion),
+                )
+                .route(
+                    "/commercials/{id}/settings",
+                    get(get_commercial_settings).put(update_commercial_settings),
+                )
+                .route(
                     "/commercials/{id}/break-windows",
                     get(get_break_windows).post(add_break_window),
                 )

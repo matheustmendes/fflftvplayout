@@ -111,6 +111,15 @@ async fn async_main() -> Result<(), ProcessError> {
 
     set_mock_time(&ARGS.fake_time)?;
     init_globales(&pool).await?;
+
+    // A restart interrupts running spot conversions; mark them failed so the
+    // operator can retry them instead of waiting for them forever.
+    match handles::fail_interrupted_spots(&pool).await {
+        Ok(0) => {}
+        Ok(count) => warn!("{count} spot conversion(s) were interrupted by the restart"),
+        Err(error) => error!("Cannot check interrupted spot conversions: {error}"),
+    }
+
     let system = SystemStat::new();
     let shutdown = CancellationToken::new();
 

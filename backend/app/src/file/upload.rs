@@ -17,6 +17,7 @@ use tokio::{
 use crate::utils::errors::ServiceError;
 
 const ALLOWED_MIME_TYPES: &[&str] = &[
+    "application/mxf",
     "audio/aac",
     "audio/flac",
     "audio/mp4",
@@ -526,6 +527,15 @@ mod tests {
         assert!(validate_chunk(4, 7, 6, 3).is_err());
         assert!(sanitize_upload_filename("/").is_err());
         assert!(sanitize_upload_filename("video.exe").is_err());
+    }
+
+    #[test]
+    fn broadcast_mxf_files_are_accepted_for_upload() {
+        assert_eq!(
+            sanitize_upload_filename("Natal 30s.MXF").unwrap(),
+            "Natal 30s.MXF"
+        );
+        assert!(sanitize_upload_filename("spot.mxf").is_ok());
     }
 
     #[test]

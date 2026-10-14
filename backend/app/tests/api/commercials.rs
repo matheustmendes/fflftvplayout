@@ -30,7 +30,73 @@ async fn commercial_fixture() -> SecurityFixture {
             .unwrap();
     }
 
+    // An MXF like the commercials: MPEG-2 video and one mono track per tone.
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-v",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=d=3:s=320x180:r=25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=f=440:r=48000:d=3",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=f=880:r=48000:d=3",
+            "-map",
+            "0:v",
+            "-map",
+            "1:a",
+            "-map",
+            "2:a",
+            "-c:v",
+            "mpeg2video",
+            "-c:a",
+            "pcm_s24le",
+            "-f",
+            "mxf",
+        ])
+        .arg(storage.join("natal.mxf"))
+        .status()
+        .unwrap();
+
+    assert!(status.success(), "could not generate the test MXF");
+
     fixture
+}
+
+/// Poll the spot list until the conversion of a spot is no longer running.
+async fn wait_for_spot(fixture: &SecurityFixture, token: &str, spot_id: i64) -> serde_json::Value {
+    for _ in 0..300 {
+        let (_, spots) = send(
+            fixture,
+            "GET",
+            "/api/commercials/1/spots?include_archived=true",
+            Some(token),
+            json!(null),
+        )
+        .await;
+        let spot = spots
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|spot| spot["id"].as_i64() == Some(spot_id))
+            .cloned()
+            .unwrap();
+
+        if spot["status"] != "processing" {
+            return spot;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    panic!("the conversion of spot {spot_id} did not finish");
 }
 
 async fn send(
@@ -358,7 +424,7 @@ async fn campaign_lifecycle_validates_updates_and_archives() {
 
 #[tokio::test]
 #[serial]
-async fn operator_registers_a_spot_and_the_response_reports_its_state() {
+async fn operator_registers_a_spot_that_is_converted_in_the_background() {
     let fixture = commercial_fixture().await;
     let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
     let operator = access_token(&fixture.state, 1).await;
@@ -369,52 +435,43 @@ async fn operator_registers_a_spot_and_the_response_reports_its_state() {
         "POST",
         "/api/commercials/1/spots",
         Some(&operator),
-        json!({ "campaign_id": campaign_id, "title": "Natal 30s", "file_path": "ad.mp4" }),
+        json!({ "campaign_id": campaign_id, "title": "Natal 30s", "file_path": "natal.mxf" }),
     )
     .await;
 
-    assert_eq!(status, StatusCode::CREATED, "{spot}");
-    assert_eq!(spot["status"], "ready");
-    assert!(spot["duration_sec"].as_f64().unwrap() > 0.0);
-    assert_eq!(spot["file_path"], "ad.mp4");
+    assert_eq!(status, StatusCode::ACCEPTED, "{spot}");
+    assert_eq!(spot["status"], "processing");
+    assert_eq!(spot["source_path"], "natal.mxf");
     assert_eq!(spot["created_by"], 1);
 
-    let (status, silent) = send(
-        &fixture,
-        "POST",
-        "/api/commercials/1/spots",
-        Some(&operator),
-        json!({ "campaign_id": campaign_id, "title": "Mudo", "file_path": "silent.mp4" }),
-    )
-    .await;
+    let spot_id = spot["id"].as_i64().unwrap();
+    let ready = wait_for_spot(&fixture, &operator, spot_id).await;
 
-    assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(silent["status"], "failed");
-    assert_eq!(silent["error"], "the file has no audio track");
+    assert_eq!(ready["status"], "ready", "{ready}");
+    assert_eq!(
+        ready["file_path"],
+        format!("commercials/spot-{spot_id}.mp4")
+    );
+    assert_eq!(ready["progress"], 100);
+    assert!(ready["duration_sec"].as_f64().unwrap() > 2.0);
+    assert!(
+        fixture
+            .root
+            .join(format!("storage/commercials/spot-{spot_id}.mp4"))
+            .is_file()
+    );
 
     let (status, _) = send(
         &fixture,
         "POST",
         "/api/commercials/1/spots",
         Some(&operator),
-        json!({ "campaign_id": campaign_id, "title": "Again", "file_path": "ad.mp4" }),
+        json!({ "campaign_id": campaign_id, "title": "Again", "file_path": "natal.mxf" }),
     )
     .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
 
-    let (_, listed) = send(
-        &fixture,
-        "GET",
-        &format!("/api/commercials/1/spots?campaign_id={campaign_id}"),
-        Some(&operator),
-        json!(null),
-    )
-    .await;
-
-    assert_eq!(listed.as_array().unwrap().len(), 2);
-
-    let spot_id = spot["id"].as_i64().unwrap();
     let (status, _) = send(
         &fixture,
         "DELETE",
@@ -440,6 +497,187 @@ async fn operator_registers_a_spot_and_the_response_reports_its_state() {
     .await;
 
     assert_eq!(status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+#[serial]
+async fn a_spot_that_cannot_be_converted_reports_why_and_can_be_retried() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let advertiser_id = create_advertiser(&fixture, &admin, "Padaria").await;
+    let campaign_id = create_campaign(&fixture, &admin, advertiser_id).await;
+    let (_, spot) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/spots",
+        Some(&operator),
+        json!({ "campaign_id": campaign_id, "title": "Mudo", "file_path": "silent.mp4" }),
+    )
+    .await;
+    let spot_id = spot["id"].as_i64().unwrap();
+    let failed = wait_for_spot(&fixture, &operator, spot_id).await;
+
+    assert_eq!(failed["status"], "failed");
+    assert_eq!(failed["error"], "the file has no audio track");
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        &format!("/api/commercials/1/spots/{spot_id}/retry"),
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::ACCEPTED);
+
+    let failed_again = wait_for_spot(&fixture, &operator, spot_id).await;
+
+    assert_eq!(failed_again["status"], "failed");
+
+    let (_, ok_spot) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/spots",
+        Some(&operator),
+        json!({ "campaign_id": campaign_id, "title": "Bom", "file_path": "ad.mp4" }),
+    )
+    .await;
+    let ok_id = ok_spot["id"].as_i64().unwrap();
+
+    assert_eq!(
+        wait_for_spot(&fixture, &operator, ok_id).await["status"],
+        "ready"
+    );
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        &format!("/api/commercials/1/spots/{ok_id}/retry"),
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "a ready spot is not retried");
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/spots/9999/retry",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = send(
+        &fixture,
+        "POST",
+        &format!("/api/commercials/2/spots/{spot_id}/retry"),
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "other channels are off limits"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn conversion_settings_default_validate_and_only_admins_change_them() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+    let operator = access_token(&fixture.state, 1).await;
+    let (status, defaults) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/settings",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(defaults["audio_mapping"], "auto");
+    assert_eq!(defaults["loudness_enabled"], true);
+    assert_eq!(defaults["loudness_target_lufs"], -24.0);
+    assert_eq!(defaults["loudness_true_peak_dbtp"], -2.0);
+
+    let (status, _) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/settings",
+        Some(&operator),
+        json!({ "audio_mapping": "mix_all" }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    let (status, saved) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/settings",
+        Some(&admin),
+        json!({ "audio_mapping": "first_two_mono", "loudness_target_lufs": -23.0 }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{saved}");
+    assert_eq!(saved["audio_mapping"], "first_two_mono");
+    assert_eq!(saved["loudness_target_lufs"], -23.0);
+    assert_eq!(
+        saved["loudness_enabled"], true,
+        "omitted fields keep their defaults"
+    );
+
+    let (_, stored) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/settings",
+        Some(&operator),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(stored["audio_mapping"], "first_two_mono");
+
+    for body in [
+        json!({ "loudness_target_lufs": 5.0 }),
+        json!({ "loudness_true_peak_dbtp": 3.0 }),
+    ] {
+        let (status, _) = send(
+            &fixture,
+            "PUT",
+            "/api/commercials/1/settings",
+            Some(&admin),
+            body,
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    let (status, _) = send(
+        &fixture,
+        "PUT",
+        "/api/commercials/1/settings",
+        Some(&admin),
+        json!({ "audio_mapping": "nonsense" }),
+    )
+    .await;
+
+    assert!(
+        status.is_client_error(),
+        "unknown mapping rejected, got {status}"
+    );
 }
 
 #[tokio::test]

@@ -15,11 +15,13 @@ use crate::{
     },
     db::{
         handles,
-        models::{Advertiser, BreakWindow, Campaign, Role, Spot},
+        models::{Advertiser, BreakWindow, Campaign, CommercialSettings, Role, Spot},
     },
+    player::controller::ChannelManager,
     utils::{
-        commercial::{SpotRequest, register_spot, unique_conflict},
+        commercial::{SpotRequest, register_spot, retry_spot, run_conversion, unique_conflict},
         errors::ServiceError,
+        spot_convert::VideoTarget,
     },
 };
 
@@ -285,14 +287,37 @@ pub async fn get_spots(
     ))
 }
 
+/// The running manager of a channel, and what spots must be converted to.
+async fn spot_context(
+    state: &AppState,
+    channel: i32,
+) -> Result<(PathBuf, VideoTarget), ServiceError> {
+    let manager: ChannelManager = {
+        let guard = state.controller.read().await;
+        guard.get(channel)
+    }
+    .ok_or_else(|| ServiceError::BadRequest(format!("Channel {channel} not found!")))?;
+    let storage_root: PathBuf = manager.storage.root.read().await.clone();
+    let config = manager.config.read().await;
+    let target = VideoTarget {
+        width: config.output.width,
+        height: config.output.height,
+        fps: config.output.fps,
+    };
+
+    Ok((storage_root, target))
+}
+
 /// **Register spot**
 ///
-/// Registers a file of the channel storage as a spot and checks that it can be
-/// played. The response tells whether the spot is `ready` or `failed`.
+/// Registers an uploaded file of the channel storage as a spot. The file is
+/// converted in the background to the format of the channel (size, frame rate,
+/// stereo audio, loudness), so the response is `202 Accepted` with the spot in
+/// the `processing` state. Poll the spot list for `status` and `progress`.
 ///
 /// ```BASH
 /// curl -X POST http://127.0.0.1:8787/api/commercials/1/spots -H 'Content-Type: application/json' \
-/// -d '{ "campaign_id": 5, "title": "Natal 30s", "file_path": "comerciais/natal.mp4" }' \
+/// -d '{ "campaign_id": 5, "title": "Natal 30s", "file_path": "upload/natal.mxf" }' \
 /// -H 'Authorization: Bearer <TOKEN>'
 /// ```
 pub async fn add_spot(
@@ -304,15 +329,37 @@ pub async fn add_spot(
 ) -> Result<(StatusCode, Json<Spot>), ServiceError> {
     ensure_reader(&user, &details, channel)?;
 
-    let manager = {
-        let guard = state.controller.read().await;
-        guard.get(channel)
-    }
-    .ok_or_else(|| ServiceError::BadRequest(format!("Channel {channel} not found!")))?;
-    let storage_root: PathBuf = manager.storage.root.read().await.clone();
-    let spot = register_spot(&state.pool, &storage_root, channel, user.id, &data).await?;
+    let (storage_root, target) = spot_context(&state, channel).await?;
+    let (spot, job) =
+        register_spot(&state.pool, &storage_root, channel, user.id, &data, target).await?;
 
-    Ok((StatusCode::CREATED, Json(spot)))
+    tokio::spawn(run_conversion(job));
+
+    Ok((StatusCode::ACCEPTED, Json(spot)))
+}
+
+/// **Retry the conversion of a failed spot**
+///
+/// Useful after changing the audio mapping in the settings.
+///
+/// ```BASH
+/// curl -X POST http://127.0.0.1:8787/api/commercials/1/spots/7/retry \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn retry_spot_conversion(
+    State(state): State<AppState>,
+    Path((channel, id)): Path<(i32, i32)>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<(StatusCode, Json<Spot>), ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    let (storage_root, target) = spot_context(&state, channel).await?;
+    let (spot, job) = retry_spot(&state.pool, &storage_root, channel, id, target).await?;
+
+    tokio::spawn(run_conversion(job));
+
+    Ok((StatusCode::ACCEPTED, Json(spot)))
 }
 
 /// **Archive spot**
@@ -423,4 +470,51 @@ pub async fn remove_break_window(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// **Conversion settings**
+///
+/// How uploaded spots are converted: which audio tracks become the stereo
+/// program (`auto`, `first_stream`, `first_two_mono`, `mix_all`) and the
+/// loudness target.
+///
+/// ```BASH
+/// curl -X GET http://127.0.0.1:8787/api/commercials/1/settings \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn get_commercial_settings(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+) -> Result<Json<CommercialSettings>, ServiceError> {
+    ensure_reader(&user, &details, channel)?;
+
+    Ok(Json(
+        handles::select_commercial_settings(&state.pool, channel).await?,
+    ))
+}
+
+/// **Update conversion settings**
+///
+/// ```BASH
+/// curl -X PUT http://127.0.0.1:8787/api/commercials/1/settings -H 'Content-Type: application/json' \
+/// -d '{ "audio_mapping": "first_two_mono", "loudness_enabled": true,
+///       "loudness_target_lufs": -24.0, "loudness_true_peak_dbtp": -2.0 }' \
+/// -H 'Authorization: Bearer <TOKEN>'
+/// ```
+pub async fn update_commercial_settings(
+    State(state): State<AppState>,
+    Path(channel): Path<i32>,
+    user: AuthUser,
+    details: AuthDetails<Role>,
+    Json(mut data): Json<CommercialSettings>,
+) -> Result<Json<CommercialSettings>, ServiceError> {
+    ensure_manager(&user, &details, channel)?;
+    data.validate().map_err(ServiceError::BadRequest)?;
+    data.channel_id = channel;
+
+    handles::upsert_commercial_settings(&state.pool, channel, &data).await?;
+
+    Ok(Json(data))
 }
