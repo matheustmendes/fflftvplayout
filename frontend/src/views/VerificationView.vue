@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref, useTemplateRef } from 'vue'
+import { useHead } from '@unhead/vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/stores/auth'
+
+import AuthShell from '@/components/ui/AuthShell.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -10,89 +13,104 @@ const auth = useAuth()
 
 const verificationCode = ref('')
 const formError = ref('')
-const showLoginError = ref(false)
+const submitting = ref(false)
+const codeInput = useTemplateRef<HTMLInputElement>('codeInput')
+
+useHead({
+    title: computed(() => t('auth2.verifyTitle')),
+})
+
+onMounted(() => {
+    codeInput.value?.focus()
+})
 
 async function verify() {
+    if (submitting.value) {
+        return
+    }
+
+    submitting.value = true
+    formError.value = ''
+
     try {
         const status = await auth.verifyCode(verificationCode.value)
 
         verificationCode.value = ''
-        formError.value = ''
 
         if (status === 401 || status === 400 || status === 403) {
-            formError.value = t('verification.wrongCode')
-            showLoginError.value = true
-
-            setTimeout(() => {
-                showLoginError.value = false
-            }, 3000)
+            formError.value = t('auth2.wrongCode')
+            codeInput.value?.focus()
         }
 
         if (status === 200) {
             await auth.selectAuthUser()
             await router.push({ name: 'home' })
         }
-    } catch (e) {
-        formError.value = e as string
-
-        showLoginError.value = true
-
-        setTimeout(() => {
-            showLoginError.value = false
-        }, 3000)
+    } catch {
+        formError.value = t('auth2.serverError')
     }
+
+    submitting.value = false
 }
 </script>
 <template>
-    <div v-if="!auth.isLogin" class="relative w-full min-h-screen xs:h-full flex justify-center items-center">
-        <RouterLink
-            :to="{ name: 'login' }"
-            class="btn btn-ghost absolute top-5 left-5"
-            @click="auth.cancelVerification()"
-        >
-            Login
-        </RouterLink>
-        <div class="w-full h-full flex justify-center items-center">
-            <div class="w-96 min-w-full flex flex-col justify-center items-center px-4">
-                <h1 class="text-6xl xs:text-8xl">ffplayout</h1>
-
-                <form class="mt-10" @submit.prevent="verify">
-                    <input
-                        v-model="auth.username"
-                        type="text"
-                        name="username"
-                        :placeholder="`${$t('user.name')} / ${$t('user.mail')}`"
-                        class="input w-full focus:border-base-content/30 focus:outline-base-content/30"
-                        required
-                    />
-
-                    <input
-                        v-model="verificationCode"
-                        type="text"
-                        :placeholder="$t('verification.codePlaceholder')"
-                        class="input w-full mt-5 focus:border-base-content/30 focus:outline-base-content/30"
-                        required
-                    />
-
-                    <div class="w-full mt-4 grid grid-flow-row-dense grid-cols-12 grid-rows-1 gap-2">
-                        <div class="col-span-3">
-                            <button type="submit" class="btn btn-primary">
-                                {{ $t('verification.verify') }}
-                            </button>
-                        </div>
-                        <div class="col-span-12 sm:col-span-9">
-                            <div
-                                v-if="showLoginError"
-                                role="alert"
-                                class="alert alert-error w-auto rounded-sm z-2 h-12 p-[0.7rem]"
-                            >
-                                <i class="bi bi-exclamation-triangle-fill"></i>
-                                <span>{{ formError }}</span>
-                            </div>
-                        </div>
-                    </div>
-                </form>
+    <AuthShell v-if="!auth.isLogin" :title="t('auth2.verifyHeading')" :subtitle="t('auth2.verifyText')">
+        <form class="flex flex-col gap-5" @submit.prevent="verify">
+            <div>
+                <label class="block text-sm font-semibold mb-1" for="verify-username">
+                    {{ t('auth2.usernameOrMail') }}
+                </label>
+                <input
+                    id="verify-username"
+                    v-model="auth.username"
+                    type="text"
+                    name="username"
+                    autocomplete="username"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    class="input input-lg w-full"
+                    required
+                />
             </div>
-        </div>
-    </div>
+
+            <div>
+                <label class="block text-sm font-semibold mb-1" for="verify-code">{{ t('auth2.codeLabel') }}</label>
+                <input
+                    id="verify-code"
+                    ref="codeInput"
+                    v-model="verificationCode"
+                    type="text"
+                    name="code"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    :placeholder="t('auth2.codePlaceholder')"
+                    class="input input-lg w-full tracking-widest text-center text-2xl"
+                    :class="formError && 'input-error'"
+                    required
+                />
+                <p class="mt-1 text-sm opacity-70">{{ t('auth2.codeHelp') }}</p>
+            </div>
+
+            <div v-if="formError" role="alert" class="alert alert-error text-base">
+                <i class="bi bi-exclamation-triangle-fill text-xl" />
+                <span class="font-semibold">{{ formError }}</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-full" :disabled="submitting">
+                <span v-if="submitting" class="loading loading-spinner" />
+                {{ t('auth2.verifyButton') }}
+            </button>
+        </form>
+
+        <template #footer>
+            <RouterLink
+                :to="{ name: 'login' }"
+                class="link link-primary font-semibold"
+                @click="auth.cancelVerification()"
+            >
+                <i class="bi bi-arrow-left" />
+                {{ t('auth2.backToLogin') }}
+            </RouterLink>
+        </template>
+    </AuthShell>
 </template>

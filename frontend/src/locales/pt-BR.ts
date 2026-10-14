@@ -1,5 +1,6 @@
 import commercial from './commercial/pt-BR.ts'
 import ux from './ux/pt-BR.ts'
+import screens from './ux/screens.pt-BR.ts'
 
 export default {
     ok: 'Ok',
@@ -12,6 +13,7 @@ export default {
     },
     commercial,
     ...ux,
+    ...screens,
     button: {
         commercial: 'Comerciais',
         login: 'Logar',
