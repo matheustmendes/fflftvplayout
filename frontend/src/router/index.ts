@@ -19,7 +19,7 @@ const router = createRouter({
             path: '/',
             name: 'home',
             component: HomeView,
-            meta: { showHeader: false },
+            meta: { showHeader: true },
         },
         {
             path: '/verification',

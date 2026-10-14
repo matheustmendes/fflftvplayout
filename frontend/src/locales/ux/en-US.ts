@@ -43,6 +43,7 @@ export default {
         title: 'Dashboard',
         subtitle: 'See at a glance whether the station is on the air and what needs attention.',
         now: {
+            filler: 'Filler content (no file)',
             playing: 'On air now',
             left: '{time} left',
             next: 'Next: {title} at {time}',

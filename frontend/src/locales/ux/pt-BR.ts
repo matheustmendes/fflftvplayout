@@ -43,6 +43,7 @@ export default {
         title: 'Painel',
         subtitle: 'Veja de uma vez se a emissora está no ar e o que precisa de atenção.',
         now: {
+            filler: 'Conteúdo de enchimento (sem arquivo)',
             playing: 'Agora no ar',
             left: 'Faltam {time}',
             next: 'Depois: {title} às {time}',

@@ -44,7 +44,7 @@ const title = computed(() => {
         return ''
     }
 
-    return media.title || media.source.split('/').pop() || media.source
+    return media.title || media.source.split('/').pop() || t('dash.now.filler')
 })
 
 async function run(action: Action) {

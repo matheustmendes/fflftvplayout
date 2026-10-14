@@ -45,3 +45,36 @@ interação, **100% amigável para quem não entende de TV nem de informática**
 
 Idiomas: pt-BR (principal) e en-US. Alemão e russo herdados do projeto original
 caem para o inglês nos textos novos.
+
+## Guia de design (para quem for mexer nas telas)
+
+**Tema** (`frontend/src/assets/css/main.css`): `btn-primary` é azul com texto
+branco (ação principal da tela, no máximo uma por área); `btn` neutro é a ação
+secundária; `btn-error` só para ação destrutiva; laranja (`accent`) é só destaque
+(aba ativa, barra de progresso de marca). Cores de estado: `success`, `warning`,
+`error`, `info` com texto de contraste já definido (não force `text-black`).
+
+**Componentes** (`frontend/src/components/ui/`):
+
+| Componente | Para quê |
+|---|---|
+| `PageHeader` | título da tela (`h1`), subtítulo em uma frase e botões à direita (slot `actions`) |
+| `HelpTip` | ícone "?" ao lado de um campo, com a explicação em linguagem simples |
+| `EmptyState` | quando não há nada ainda: ícone, título, frase e o botão do que fazer |
+| `StatusPill` | estado em uma palavra com cor (`ok`, `warn`, `bad`, `live`, `idle`) |
+| `ConfirmModal` | confirmação com botão que diz o que vai acontecer ("Sim, parar o canal"); `danger` para o que não tem volta |
+
+**Estado do canal para qualquer tela:** `useLive()` (`stores/live.ts`): `state`
+(`on_air`, `live`, `restarting`, `stopped`, `offline`), `media`, `progress`,
+`secondsLeft`. Já existe uma única conexão de status; não abra outra.
+
+**Textos:** português do dia a dia em `frontend/src/locales/ux/pt-BR.ts` e a
+versão em inglês em `en-US.ts` (chaves novas por área, ex.: `settings2.*`). Os
+arquivos `pt-BR.ts` e `en-US.ts` principais só importam e espalham (`...ux`).
+
+**Avançado escondido:** campos técnicos ficam dentro de um bloco "Mostrar opções
+avançadas" (`ui.advancedShow`), fechado por padrão, com `ui.advancedHelp`.
+
+**Verificação:** `npx vue-tsc --build`, `npx eslint frontend/src --config
+frontend/eslint.config.ts`, `npx prettier --check`, `npx vite build` e conferir as
+telas em 1280 px e 390 px, nos temas claro e escuro.
