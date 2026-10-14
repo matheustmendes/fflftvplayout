@@ -297,4 +297,51 @@ fuso, CSV, PDF com texto extraído por `pdftotext`, paginação, logotipo, logot
 quebrado) e HTTP (configuração, papéis, resumo, CSV, PDF, datas inválidas,
 campanha inexistente, sem token). O PDF foi aberto e conferido visualmente.
 
-## Próximo: M6, interface (telas do módulo de comerciais)
+## M6, interface (telas do módulo): implementada na nuvem
+
+Menu "Comerciais" (rota `/commercial`), em pt-BR e en-US (de e ru caem para
+o inglês), com abas:
+
+- **Hoje:** dia a dia (anterior, próximo, hoje), avisos do plano em português
+  e em destaque, intervalos do dia, o que foi ao ar (com situação), próximo
+  comercial, linha do tempo e o botão "Montar este dia" (pede confirmação
+  antes de substituir uma programação existente). Atualiza sozinha a cada 15 s
+  quando o dia é hoje.
+- **Comerciais (spots):** formulário de envio (MXF ou MP4) com barra de
+  progresso, lista com "Convertendo" (barra), "Pronto" ou "Com erro" (motivo e
+  botão "Tentar de novo"), remover com confirmação. O arquivo vai para a pasta
+  `comerciais-entrada` do storage.
+- **Campanhas:** cartões com situação (No ar, Ainda não começou, Termina em
+  breve, Sem comerciais, Encerrada), assistente em 4 passos (anunciante,
+  período, frequência e posição, confirmar) e gestão de anunciantes.
+- **Intervalos:** por dia da semana, com soma do dia, ativar/desativar e
+  "copiar para os outros dias".
+- **Grade:** por dia da semana, escolher programas do storage, reordenar,
+  renomear, total contra o tamanho do dia, aviso de alterações não salvas e
+  "copiar para os outros dias".
+- **Relatórios:** anunciante, campanha e período; resumo na tela, PDF e CSV.
+- **Ajustes (administradores):** dados da emissora e logotipo do relatório;
+  mapeamento de áudio e volume dos comerciais.
+
+Papéis: o operador (`user`) vê tudo, envia comerciais e baixa relatórios; só
+administradores alteram campanhas, intervalos, grade e ajustes (os botões nem
+aparecem para o operador, e o servidor recusa de qualquer forma).
+
+Verificação (nuvem): `vue-tsc`, ESLint e `vite build` limpos; todas as chaves de
+texto existem em pt-BR e en-US. Com o backend real e dados de teste, um
+Chromium headless percorreu todas as abas e ações (envio de comercial, criação
+de campanha pelo assistente, seletor de programas e gravação da grade, resumo,
+download de PDF e CSV, ajustes) sem erro de console nem resposta HTTP de erro.
+As capturas foram conferidas visualmente.
+
+Limitações:
+
+- Não há testes automatizados de frontend no projeto; a verificação foi o
+  roteiro de navegador acima (não está no repositório).
+- Avisos raros do plano (arquivo sumido, dia grande demais) ainda mostram o
+  detalhe em inglês vindo do servidor.
+- O binário de debug não serve o frontend (só o de release); ver
+  `.dev/acceptance/M6.md` para rodar com o build de release.
+- Não foi testado em celular nem com um operador de verdade.
+
+## Próximo: M7, geração automática dos próximos dias

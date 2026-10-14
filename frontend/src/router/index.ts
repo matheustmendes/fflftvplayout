@@ -58,6 +58,57 @@ const router = createRouter({
             meta: { showHeader: true },
         },
         {
+            path: '/commercial',
+            name: 'commercial',
+            component: () => import('@/views/CommercialView.vue'),
+            meta: { showHeader: true },
+            redirect: { name: 'commercial-today' },
+            children: [
+                {
+                    path: 'today',
+                    name: 'commercial-today',
+                    component: () => import('@/components/commercial/CommercialToday.vue'),
+                    meta: { showHeader: true },
+                },
+                {
+                    path: 'spots',
+                    name: 'commercial-spots',
+                    component: () => import('@/components/commercial/CommercialSpots.vue'),
+                    meta: { showHeader: true },
+                },
+                {
+                    path: 'campaigns',
+                    name: 'commercial-campaigns',
+                    component: () => import('@/components/commercial/CommercialCampaigns.vue'),
+                    meta: { showHeader: true },
+                },
+                {
+                    path: 'breaks',
+                    name: 'commercial-breaks',
+                    component: () => import('@/components/commercial/CommercialBreaks.vue'),
+                    meta: { showHeader: true },
+                },
+                {
+                    path: 'grid',
+                    name: 'commercial-grid',
+                    component: () => import('@/components/commercial/CommercialGrid.vue'),
+                    meta: { showHeader: true },
+                },
+                {
+                    path: 'reports',
+                    name: 'commercial-reports',
+                    component: () => import('@/components/commercial/CommercialReports.vue'),
+                    meta: { showHeader: true },
+                },
+                {
+                    path: 'settings',
+                    name: 'commercial-settings',
+                    component: () => import('@/components/commercial/CommercialSettings.vue'),
+                    meta: { showHeader: true, roles: ['global_admin', 'channel_admin'] },
+                },
+            ],
+        },
+        {
             path: '/configure',
             name: 'configure',
             component: () => import('@/views/ConfigureView.vue'),
@@ -149,7 +200,7 @@ router.beforeEach(async (to) => {
     const allowedRoles = to.meta.roles as string[] | undefined
 
     if (allowedRoles && !allowedRoles.includes(auth.role)) {
-        return { name: 'configure-channel' }
+        return { name: to.path.startsWith('/commercial') ? 'commercial-today' : 'configure-channel' }
     }
 
     return

@@ -1,3 +1,5 @@
+import commercial from './commercial/en-US.ts'
+
 export default {
     ok: 'Ok',
     cancel: 'Cancel',
@@ -7,7 +9,9 @@ export default {
         wrongLogin: 'Incorrect login data!',
         verificationSent: 'A verification code was sent to your email.',
     },
+    commercial,
     button: {
+        commercial: 'Commercials',
         login: 'Login',
         home: 'Home',
         player: 'Player',
