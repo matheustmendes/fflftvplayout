@@ -140,4 +140,84 @@ Três achados do teste que corrigiram o roteiro e o script:
 - O login é limitado a 3 por minuto por endereço (resposta 429); o script
   agora espera e tenta de novo sozinho.
 
-## Próximo: grade semanal e compilador de intervalos (M3)
+## M3: grade semanal e compilador de intervalos (concluída, falta validar com a grade real)
+
+Implementado:
+
+- `migrations/00008_week_template.sql`: `week_template_item` (programas de
+  cada dia da semana, na ordem de exibição).
+- `utils/break_planner.rs`: o compilador, como função **pura e
+  determinística** (sem banco, relógio ou arquivos). Regras:
+  - cada intervalo vai para a fronteira entre programas mais próxima do
+    horário pedido, contando os intervalos já colocados antes (que empurram
+    as fronteiras seguintes); empate fica com a fronteira mais cedo; dois
+    intervalos nunca dividem a mesma fronteira; horários antes do início do
+    dia contam como o fim do dia;
+  - preenchimento por rodízio ponderado pelo peso, com sorteio **semeado por
+    data e intervalo** (a mesma data dá sempre o mesmo resultado, e o gerador
+    é próprio para não mudar com versão de biblioteca);
+  - uma campanha aparece no máximo uma vez por intervalo e nunca passa do
+    limite por dia (contado em todos os intervalos do dia); "primeiro" e
+    "último" lugar respeitados (o "último" reserva o espaço antes do
+    rodízio); mesmo anunciante não fica colado quando há alternativa;
+  - o que os spots não cobrem vira enchimento (arquivo de filler do canal, ou
+    preto e silêncio); sobra menor que 1 s é ignorada;
+  - o dia é completado com enchimento no fim se faltar, e **bloqueado** se
+    passar mais de 5 s (de 1 a 5 s é só aviso, pois o playout corta o último
+    clipe).
+- `utils/day_plan.rs`: monta a entrada a partir do banco e do storage
+  (grade do dia da semana, janelas ativas, spots prontos das campanhas em
+  vigor na data), confere se os arquivos existem (spots e programas), roda o
+  compilador e grava a playlist no formato e caminho que o engine já lê. Uma
+  playlist existente só é substituída com confirmação; um plano com erro
+  nunca é gravado. Spots e enchimento de intervalo saem marcados como
+  publicidade, o que faz o playout esconder o logo.
+- Rotas (`/api/commercials/{canal}/...`):
+
+| Rota | Quem |
+|---|---|
+| `GET week-template[?weekday=N]` | operador e admins |
+| `PUT week-template/{weekday}` | admins. Só o arquivo é obrigatório; a duração é lida do arquivo |
+| `GET plan/{AAAA-MM-DD}` | operador e admins: prévia, sem gravar |
+| `POST plan/{AAAA-MM-DD}[?overwrite=true]` | admins: grava a playlist da data |
+
+- `scripts/dev/commercials_plan_preview.py`: linha do tempo legível do dia,
+  com horários, intervalos e avisos; `--apply` grava.
+- `.dev/acceptance/M3.md`: roteiro de aceite com a grade real.
+
+Verificação (nuvem, FFmpeg 7.1.1):
+
+- `cargo fmt`, `cargo clippy --all-features --all-targets -- --deny warnings`
+  e `cargo test --workspace` (363 do engine, 326 do app e 22 de rotas, sem
+  falhas).
+- Compilador: 33 testes (fronteiras, empates, deslocamento por intervalos
+  anteriores, limite por dia, primeiro e último lugar, anunciante, rodízio,
+  determinismo, variação entre datas, pesos, fechamento do dia, horários
+  antes do início do dia).
+- Orquestração: 15 testes com banco e arquivos reais.
+- HTTP: 15 testes, incluindo o fluxo completo (MXF enviado, convertido, grade,
+  janela, prévia, gravação, bloqueio de sobrescrita, papéis e canais).
+- **Reprodução real:** `tests/playout_commercials.rs` (ignorado por padrão,
+  roda em tempo real, 33 s). O engine de verdade tocou o dia planejado na
+  ordem certa: spot, primeiro programa, segundo programa.
+- Ferramenta de prévia testada contra um servidor real, com dois spots
+  convertidos de MXF: o "primeiro lugar" abriu cada intervalo e o segundo
+  intervalo foi para a fronteira mais próxima.
+
+Limitações conhecidas e decisões a confirmar com o cliente:
+
+- A grade é cadastrada por JSON; a tela é da M6.
+- O enchimento usa o **arquivo** de filler configurado; se o filler for uma
+  pasta, o intervalo usa preto e silêncio.
+- A duração de cada programa é gravada quando entra na grade. Se o arquivo for
+  trocado por outro de duração diferente, o plano continua usando a antiga
+  (o engine ajusta e a validação da playlist avisa).
+- Um programa cujo arquivo sumiu **permanece** no dia (o playout preenche o
+  tempo com o filler) e aparece como aviso `program_file_missing`.
+- O limite por dia conta o que foi **planejado** no dia, não o que foi ao ar
+  (o registro de veiculação é a M4).
+- A tolerância do dia (5 s) e a de cada intervalo (60 s por padrão, por janela)
+  estão definidas assim; ver as perguntas em `.dev/acceptance/M3.md`.
+- Ainda não há geração automática dos próximos dias (M7).
+
+## Próximo: M4, registro de veiculação (as-run)

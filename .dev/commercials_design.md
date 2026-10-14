@@ -279,7 +279,7 @@ termos técnicos (FFmpeg, probe, codec) na tela do operador. Novas telas em
 
 ## 10. Plano de implementação
 
-**Andamento:** M1 e M2 concluídas (ver `.dev/commercials_progress.md`).
+**Andamento:** M1, M2 e M3 concluídas (ver `.dev/commercials_progress.md`).
 
 
 Cada etapa é entregável e testável por si; as quatro primeiras podem ser

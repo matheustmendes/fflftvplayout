@@ -180,6 +180,26 @@ fn campaigns_from_spots(
     (campaigns, warnings)
 }
 
+/// A program whose file is gone stays in the day, since the playout fills its
+/// time with the channel filler, but the operator has to know.
+fn missing_program_warnings(items: &[WeekTemplateItem], storage_root: &Path) -> Vec<PlanWarning> {
+    items
+        .iter()
+        .filter(|item| !storage_root.join(&item.source).is_file())
+        .map(|item| {
+            PlanWarning::new(
+                WarningCode::ProgramFileMissing,
+                Severity::Warning,
+                format!(
+                    "the file of program {:?} ({}) is missing from the storage; its time is filled with the filler",
+                    item.title, item.source
+                ),
+                None,
+            )
+        })
+        .collect()
+}
+
 /// The channel filler file, when one is configured, to complete the breaks.
 async fn break_filler(config: &PlayoutConfig) -> Option<PlanFiller> {
     let path = &config.storage.filler_path;
@@ -209,11 +229,9 @@ pub async fn plan_for_date(
 ) -> Result<DayPlan, ServiceError> {
     let weekday = date.weekday().number_from_monday() as i32;
     let date_text = date.format("%Y-%m-%d").to_string();
-    let programs = handles::select_week_template(pool, channel_id, Some(weekday))
-        .await?
-        .into_iter()
-        .map(program_from_item)
-        .collect();
+    let template = handles::select_week_template(pool, channel_id, Some(weekday)).await?;
+    let missing_programs = missing_program_warnings(&template, &config.channel.storage);
+    let programs = template.into_iter().map(program_from_item).collect();
     let windows = handles::select_break_windows(pool, channel_id, Some(weekday))
         .await?
         .into_iter()
@@ -238,7 +256,8 @@ pub async fn plan_for_date(
     };
     let mut plan = plan_day(&input);
 
-    plan.warnings.splice(0..0, missing_files);
+    plan.warnings
+        .splice(0..0, missing_programs.into_iter().chain(missing_files));
 
     Ok(plan)
 }
@@ -383,6 +402,10 @@ mod tests {
         )
         .await
         .unwrap();
+
+        for name in ["a", "b", "c"] {
+            std::fs::write(storage.join(format!("{name}.mp4")), b"media").unwrap();
+        }
         handles::insert_break_window(
             &pool,
             1,
@@ -574,6 +597,30 @@ mod tests {
         assert!(!kinds(&plan).contains(&ItemKind::Spot));
         assert_eq!(plan.warnings[0].code, WarningCode::SpotFileMissing);
         assert!(plan.warnings[0].message.contains("gone"));
+    }
+
+    #[tokio::test]
+    async fn a_program_whose_file_is_gone_stays_in_the_day_and_is_reported() {
+        let fixture = fixture().await;
+
+        std::fs::remove_file(fixture.storage.join("b.mp4")).unwrap();
+
+        let plan = plan_for_date(&fixture.pool, &fixture.config, 1, thursday())
+            .await
+            .unwrap();
+        let program_count = plan
+            .items
+            .iter()
+            .filter(|item| item.kind == ItemKind::Program)
+            .count();
+
+        assert_eq!(program_count, 3, "the slot is kept so the day still fits");
+        assert_eq!(plan.warnings[0].code, WarningCode::ProgramFileMissing);
+        assert!(plan.warnings[0].message.contains("b.mp4"));
+        assert!(
+            !plan.has_errors(),
+            "the playout fills the slot, so it is a warning"
+        );
     }
 
     #[tokio::test]

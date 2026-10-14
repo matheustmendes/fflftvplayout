@@ -68,13 +68,16 @@ LOCAL (você): valida o que depende do mundo real, que a nuvem não alcança:
   M2 (upload e conversão de MXF, mapeamento de áudio configurável,
   normalização de volume) estão implementadas e passam em fmt, clippy e na
   suíte completa na nuvem.
-- Falta validar a M2 com um MXF REAL: ver .dev/acceptance/M2.md. Esse é o
-  seu primeiro trabalho. O script scripts/dev/commercials_smoke.py faz o
-  teste de ponta a ponta pela API.
-- Próxima etapa (na nuvem): M3, grade semanal e compilador de intervalos.
-- Ainda NÃO existem: compilador de intervalos, registro de veiculação,
-  relatórios nem telas do módulo. Os comerciais cadastrados hoje não alteram
-  o que vai ao ar.
+- M3 (grade semanal e compilador de intervalos) também está implementada e
+  verificada na nuvem, inclusive com o engine real tocando um dia planejado.
+- Falta validar COM DADOS REAIS (seu trabalho, nesta ordem):
+  1. M2 com um MXF REAL: .dev/acceptance/M2.md. Script de ponta a ponta:
+     scripts/dev/commercials_smoke.py.
+  2. M3 com a GRADE REAL da emissora: .dev/acceptance/M3.md. Prévia legível
+     do dia: scripts/dev/commercials_plan_preview.py.
+- Próxima etapa (na nuvem): M4, registro de veiculação (as-run).
+- Ainda NÃO existem: registro de veiculação, relatórios, geração automática
+  dos próximos dias nem telas do módulo (a grade se cadastra por JSON).
 
 ## Como conduzir uma validação
 1. Siga o roteiro em .dev/acceptance/<etapa>.md.

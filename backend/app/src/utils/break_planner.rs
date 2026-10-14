@@ -154,6 +154,7 @@ pub enum WarningCode {
     DaySlightlyLong,
     DayTooLong,
     SpotFileMissing,
+    ProgramFileMissing,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -583,7 +584,7 @@ fn place_windows<'a>(
             Some((boundary, _)) => {
                 slots[boundary] = Some(Placed {
                     window: entry.window,
-                })
+                });
             }
             None => warnings.push(PlanWarning::new(
                 WarningCode::NoFreeBoundary,
