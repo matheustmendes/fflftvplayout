@@ -265,6 +265,7 @@ pub struct OutputConfig {
     pub logo: Option<LogoConfig>,
     pub text: Option<TextConfig>,
     pub text_overlay_state: TextOverlayState,
+    pub graphic_layers: GraphicLayersState,
     pub stream_type: StreamType,
     pub stream_format: String,
     pub video_codec: String,
@@ -1353,6 +1354,66 @@ pub(crate) struct TextOverlaySnapshot {
     pub start_pts: Option<i64>,
 }
 
+/// What a graphic layer draws: a rendered text or an image file.
+#[derive(Debug, Clone, PartialEq)]
+pub enum GraphicContent {
+    Text(TextConfig),
+    /// Image with its own scale and exact `X:Y` pixel position.
+    Image(LogoConfig),
+}
+
+/// One overlay of the on-air graphics stack. The `id` is stable while the
+/// layer stays on air, so the engine only reloads layers whose content changed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphicLayer {
+    pub id: i64,
+    pub content: GraphicContent,
+}
+
+/// Set of graphic layers drawn above the video, in order (last on top).
+///
+/// The application replaces the whole set; the engine picks the change up on
+/// the next frame. Unlike [`TextOverlayState`] it can hold several layers.
+#[derive(Debug, Clone, Default)]
+pub struct GraphicLayersState {
+    inner: Arc<RwLock<GraphicLayersInner>>,
+}
+
+#[derive(Debug, Default)]
+struct GraphicLayersInner {
+    revision: u64,
+    layers: Vec<GraphicLayer>,
+}
+
+impl GraphicLayersState {
+    /// Replaces the layers; an identical set does not count as a change.
+    pub fn set(&self, layers: Vec<GraphicLayer>) {
+        let mut inner = self.inner.write().unwrap_or_else(PoisonError::into_inner);
+
+        if inner.layers == layers {
+            return;
+        }
+
+        inner.revision = inner.revision.wrapping_add(1);
+        inner.layers = layers;
+    }
+
+    pub fn layers(&self) -> Vec<GraphicLayer> {
+        self.inner
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .layers
+            .clone()
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.inner
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .revision
+    }
+}
+
 impl OutputConfig {
     pub fn new(width: u32, height: u32, fps: u32, sample_rate: u32) -> Self {
         Self {
@@ -1374,6 +1435,7 @@ impl OutputConfig {
             logo: None,
             text: None,
             text_overlay_state: TextOverlayState::default(),
+            graphic_layers: GraphicLayersState::default(),
             stream_type: StreamType::Rtmp,
             stream_format: String::new(),
             video_codec: "libx264".to_string(),
@@ -1457,6 +1519,11 @@ impl OutputConfig {
 
     pub fn with_text_overlay_state(mut self, text_overlay_state: TextOverlayState) -> Self {
         self.text_overlay_state = text_overlay_state;
+        self
+    }
+
+    pub fn with_graphic_layers(mut self, graphic_layers: GraphicLayersState) -> Self {
+        self.graphic_layers = graphic_layers;
         self
     }
 
@@ -1849,5 +1916,39 @@ mod tests {
 
         assert_eq!(options.get("quality").map(String::as_str), Some("23"));
         assert!(validate_video_options("h264_vaapi", &options).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod graphic_layers_tests {
+    use super::*;
+
+    fn layer(id: i64, text: &str) -> GraphicLayer {
+        GraphicLayer {
+            id,
+            content: GraphicContent::Text(TextConfig {
+                text: Some(text.to_string()),
+                ..TextConfig::default()
+            }),
+        }
+    }
+
+    #[test]
+    fn an_identical_set_is_not_a_change() {
+        let state = GraphicLayersState::default();
+
+        state.set(vec![layer(1, "a")]);
+
+        let revision = state.revision();
+
+        state.set(vec![layer(1, "a")]);
+        assert_eq!(state.revision(), revision);
+
+        state.set(vec![layer(1, "a"), layer(2, "b")]);
+        assert_ne!(state.revision(), revision);
+        assert_eq!(state.layers().len(), 2);
+
+        state.set(Vec::new());
+        assert!(state.layers().is_empty());
     }
 }

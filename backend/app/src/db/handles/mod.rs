@@ -1,5 +1,6 @@
 pub mod airlog;
 pub mod auto_plan;
+pub mod cg;
 pub mod channel;
 pub mod commercial;
 pub mod configuration;
@@ -16,6 +17,7 @@ pub mod week_template;
 
 pub use airlog::*;
 pub use auto_plan::*;
+pub use cg::*;
 pub use channel::*;
 pub use commercial::*;
 pub use configuration::*;

@@ -16,6 +16,8 @@ use tower::util::ServiceExt;
 
 #[path = "api/auth.rs"]
 mod auth;
+#[path = "api/cg.rs"]
+mod cg;
 #[path = "api/commercials.rs"]
 mod commercials;
 #[path = "api/configuration.rs"]

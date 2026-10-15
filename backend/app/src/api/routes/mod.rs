@@ -25,6 +25,7 @@ use tokio::{
 };
 use tokio_util::io::ReaderStream;
 
+mod cg;
 mod channel;
 mod commercials;
 mod control;
@@ -40,6 +41,7 @@ mod setup;
 mod system;
 mod user;
 
+pub use cg::*;
 pub use channel::*;
 pub use commercials::*;
 pub use control::*;

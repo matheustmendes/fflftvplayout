@@ -86,7 +86,7 @@ pub struct WeekdayQuery {
 }
 
 /// Everyone who can use the channel may look at the commercial data.
-fn ensure_reader(
+pub(super) fn ensure_reader(
     user: &AuthUser,
     details: &AuthDetails<Role>,
     channel: i32,
@@ -100,7 +100,7 @@ fn ensure_reader(
 }
 
 /// Only administrators change advertisers, campaigns and break windows.
-fn ensure_manager(
+pub(super) fn ensure_manager(
     user: &AuthUser,
     details: &AuthDetails<Role>,
     channel: i32,
@@ -110,7 +110,7 @@ fn ensure_manager(
     user.ensure_channel_or_admin(channel)
 }
 
-fn not_found(what: &str, id: i32, channel: i32) -> ServiceError {
+pub(super) fn not_found(what: &str, id: i32, channel: i32) -> ServiceError {
     ServiceError::NotFound(format!("{what} {id} not found for channel {channel}"))
 }
 
@@ -368,7 +368,10 @@ pub async fn get_airlog(
 }
 
 /// The running manager of a channel.
-async fn channel_manager(state: &AppState, channel: i32) -> Result<ChannelManager, ServiceError> {
+pub(super) async fn channel_manager(
+    state: &AppState,
+    channel: i32,
+) -> Result<ChannelManager, ServiceError> {
     let guard = state.controller.read().await;
 
     guard

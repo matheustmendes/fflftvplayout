@@ -11,7 +11,7 @@ use log::{debug, trace, warn};
 use crate::{
     LogoFade, PlaybackControl,
     benchmark::{self, Stage},
-    compositor::{logo::*, text::TextOverlay},
+    compositor::{layers::RuntimeGraphicLayers, logo::*, text::TextOverlay},
     input::diagnostics::LiveInputStage,
     input::timestamps::LiveTimestampTracker,
     output::FrameOutput,
@@ -1230,12 +1230,13 @@ fn encode_composited_frame<O: FrameOutput>(
     video
         .runtime_text
         .update(timeline.video_pts, timeline.text_pts);
+    video.graphics.update(timeline.video_pts, timeline.text_pts);
     let video_opacity = media_fade_plan.video_opacity_at(timeline.video_pts);
     let changes_pixels = video_frame_needs_write(
         video_opacity,
         video.logo.is_some(),
         video.text.is_some(),
-        video.runtime_text.overlay.is_some(),
+        video.runtime_text.overlay.is_some() || video.graphics.is_active(),
     );
 
     if changes_pixels {
@@ -1303,6 +1304,10 @@ fn apply_overlays(
             text.blend(frame, timeline.video_pts, timeline.text_pts);
         });
     }
+
+    video
+        .graphics
+        .blend(frame, timeline.video_pts, timeline.text_pts);
 
     timeline.text_pts += 1;
 }
@@ -1651,6 +1656,7 @@ struct VideoDecoder {
     logo: Option<LogoOverlay>,
     text: Option<TextOverlay>,
     runtime_text: RuntimeTextOverlay,
+    graphics: RuntimeGraphicLayers,
     frame_rate_converter: FrameRateConverter,
     live_timestamps: LiveTimestampTracker,
     source_frame_duration_us: i64,
@@ -1725,6 +1731,7 @@ impl VideoDecoder {
                 .transpose()?
                 .flatten(),
             runtime_text,
+            graphics: RuntimeGraphicLayers::new(cfg, start_pts, scroll_pts),
             frame_rate_converter: FrameRateConverter::new(
                 input_time_base,
                 cfg.fps,
@@ -2324,6 +2331,7 @@ fn write_black_frames<O: FrameOutput>(
 struct FallbackOverlays {
     text: Option<TextOverlay>,
     runtime_text: RuntimeTextOverlay,
+    graphics: RuntimeGraphicLayers,
 }
 
 impl FallbackOverlays {
@@ -2361,6 +2369,7 @@ impl FallbackOverlays {
                 .transpose()?
                 .flatten(),
             runtime_text,
+            graphics: RuntimeGraphicLayers::new(cfg, fade_start_pts, scroll_pts),
         })
     }
 
@@ -2373,6 +2382,9 @@ impl FallbackOverlays {
         if let Some(text) = &mut self.runtime_text.overlay {
             text.blend(frame, timeline.video_pts, timeline.text_pts);
         }
+        self.graphics.update(timeline.video_pts, timeline.text_pts);
+        self.graphics
+            .blend(frame, timeline.video_pts, timeline.text_pts);
 
         timeline.text_pts += 1;
     }

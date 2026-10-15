@@ -1244,6 +1244,309 @@ pub struct SpotIdentity {
     pub spot_title: String,
 }
 
+const MAX_CG_TEXT_LENGTH: usize = 300;
+const MAX_CG_FADE_SECONDS: f64 = 10.0;
+const MAX_CG_SECONDS: i32 = 24 * 60 * 60;
+
+/// What a graphic shows.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum CgKind {
+    #[default]
+    Text,
+    Image,
+}
+
+/// A text or an image placed at an exact spot of the picture.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct Cg {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    pub name: String,
+    #[serde(default)]
+    pub kind: CgKind,
+    #[serde(default)]
+    pub text: String,
+    /// Image file, relative to the channel storage.
+    #[serde(default)]
+    pub image_path: String,
+    /// Left edge, in percent of the picture width.
+    #[serde(default = "default_cg_position")]
+    pub x_pct: f64,
+    /// Top edge, in percent of the picture height.
+    #[serde(default = "default_cg_position")]
+    pub y_pct: f64,
+    /// Text: letter height in percent of the picture height.
+    /// Image: width in percent of the picture width.
+    #[serde(default = "default_cg_size")]
+    pub size_pct: f64,
+    #[serde(default)]
+    pub font_family: String,
+    #[serde(default = "default_cg_font_weight")]
+    pub font_weight: String,
+    #[serde(default = "default_cg_text_color")]
+    pub text_color: String,
+    #[serde(default)]
+    pub box_enabled: bool,
+    #[serde(default = "default_cg_box_color")]
+    pub box_color: String,
+    #[serde(default = "default_cg_box_opacity")]
+    pub box_opacity: f64,
+    #[serde(default = "default_cg_opacity")]
+    pub opacity: f64,
+    #[serde(default)]
+    pub fade_in_seconds: f64,
+    #[serde(default = "active_by_default")]
+    pub enabled: bool,
+}
+
+const fn default_cg_position() -> f64 {
+    5.0
+}
+
+const fn default_cg_size() -> f64 {
+    5.0
+}
+
+fn default_cg_font_weight() -> String {
+    "bold".to_string()
+}
+
+fn default_cg_text_color() -> String {
+    "#ffffff".to_string()
+}
+
+fn default_cg_box_color() -> String {
+    "#000000".to_string()
+}
+
+const fn default_cg_box_opacity() -> f64 {
+    0.6
+}
+
+const fn default_cg_opacity() -> f64 {
+    1.0
+}
+
+fn is_hex_color(value: &str) -> bool {
+    value.len() == 7 && value.starts_with('#') && value[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn is_unit_interval(value: f64) -> bool {
+    value.is_finite() && (0.0..=1.0).contains(&value)
+}
+
+impl Cg {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_name("graphic name", &self.name)?;
+
+        match self.kind {
+            CgKind::Text => {
+                if self.text.trim().is_empty() {
+                    return Err("the text of a graphic must not be empty".to_string());
+                }
+
+                if self.text.chars().count() > MAX_CG_TEXT_LENGTH {
+                    return Err(format!(
+                        "the text of a graphic must not be longer than {MAX_CG_TEXT_LENGTH} characters"
+                    ));
+                }
+            }
+            CgKind::Image => {
+                if self.image_path.trim().is_empty() {
+                    return Err("choose the image of the graphic".to_string());
+                }
+            }
+        }
+
+        for (label, value) in [("left", self.x_pct), ("top", self.y_pct)] {
+            if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+                return Err(format!(
+                    "the {label} position must be between 0 and 100 percent"
+                ));
+            }
+        }
+
+        if !self.size_pct.is_finite() || self.size_pct <= 0.0 || self.size_pct > 100.0 {
+            return Err("the size must be greater than 0 and at most 100 percent".to_string());
+        }
+
+        if !matches!(self.font_weight.as_str(), "normal" | "semibold" | "bold") {
+            return Err("the font weight must be normal, semibold or bold".to_string());
+        }
+
+        if !is_hex_color(&self.text_color) || !is_hex_color(&self.box_color) {
+            return Err("colors must look like #RRGGBB".to_string());
+        }
+
+        if !is_unit_interval(self.opacity) || !is_unit_interval(self.box_opacity) {
+            return Err("opacity must be between 0 and 1".to_string());
+        }
+
+        if !self.fade_in_seconds.is_finite()
+            || !(0.0..=MAX_CG_FADE_SECONDS).contains(&self.fade_in_seconds)
+        {
+            return Err(format!(
+                "the fade-in must be between 0 and {MAX_CG_FADE_SECONDS} seconds"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// When a graphic is shown.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum CgMode {
+    /// At a time of the day, optionally repeating.
+    #[default]
+    Clock,
+    /// After a program starts.
+    Program,
+}
+
+/// One rule that puts a graphic on the air.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct CgSchedule {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub cg_id: i32,
+    #[serde(default)]
+    pub mode: CgMode,
+    /// Monday is bit 0, Sunday bit 6.
+    #[serde(default = "default_cg_weekdays")]
+    pub weekdays: i32,
+    #[serde(default)]
+    pub date_from: Option<String>,
+    #[serde(default)]
+    pub date_to: Option<String>,
+    #[serde(default = "default_cg_start_time")]
+    pub start_time: String,
+    #[serde(default)]
+    pub program_match: String,
+    #[serde(default)]
+    pub offset_seconds: i32,
+    #[serde(default = "default_cg_duration")]
+    pub duration_seconds: i32,
+    #[serde(default)]
+    pub repeat_every_seconds: Option<i32>,
+    #[serde(default)]
+    pub until_time: Option<String>,
+    #[serde(default = "active_by_default")]
+    pub enabled: bool,
+}
+
+const fn default_cg_weekdays() -> i32 {
+    127
+}
+
+fn default_cg_start_time() -> String {
+    "00:00:00".to_string()
+}
+
+const fn default_cg_duration() -> i32 {
+    10
+}
+
+fn parse_clock(label: &str, value: &str) -> Result<NaiveTime, String> {
+    NaiveTime::parse_from_str(value, TIME_FORMAT)
+        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M"))
+        .map_err(|_| format!("{label} must be a time in the format HH:MM"))
+}
+
+impl CgSchedule {
+    pub fn start(&self) -> Result<NaiveTime, String> {
+        parse_clock("the start time", &self.start_time)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !(1..=127).contains(&self.weekdays) {
+            return Err("choose at least one day of the week".to_string());
+        }
+
+        if !(1..=MAX_CG_SECONDS).contains(&self.duration_seconds) {
+            return Err("the time on the air must be at least one second".to_string());
+        }
+
+        if !(0..=MAX_CG_SECONDS).contains(&self.offset_seconds) {
+            return Err("the delay after the program starts is not valid".to_string());
+        }
+
+        let from = self
+            .date_from
+            .as_deref()
+            .map(|date| parse_date("the first day", date))
+            .transpose()?;
+        let to = self
+            .date_to
+            .as_deref()
+            .map(|date| parse_date("the last day", date))
+            .transpose()?;
+
+        if let (Some(from), Some(to)) = (from, to)
+            && to < from
+        {
+            return Err("the last day must not be before the first day".to_string());
+        }
+
+        if self.mode == CgMode::Clock {
+            self.start()?;
+
+            if let Some(repeat) = self.repeat_every_seconds {
+                if repeat < self.duration_seconds {
+                    return Err(
+                        "the interval between repetitions must not be shorter than the time on the air"
+                            .to_string(),
+                    );
+                }
+
+                if repeat > MAX_CG_SECONDS {
+                    return Err("the interval between repetitions is too long".to_string());
+                }
+            }
+
+            if let Some(until) = &self.until_time {
+                parse_clock("the end of the repetitions", until)?;
+            }
+        }
+
+        if self.program_match.chars().count() > MAX_NAME_LENGTH {
+            return Err(format!(
+                "the program name must not be longer than {MAX_NAME_LENGTH} characters"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// A graphic together with its schedule, the unit the API reads and saves.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CgWithSchedules {
+    #[serde(flatten)]
+    pub cg: Cg,
+    #[serde(default)]
+    pub schedules: Vec<CgSchedule>,
+}
+
+impl CgWithSchedules {
+    pub fn validate(&self) -> Result<(), String> {
+        self.cg.validate()?;
+
+        self.schedules.iter().try_for_each(CgSchedule::validate)
+    }
+}
+
 #[cfg(test)]
 mod commercial_tests {
     use super::*;

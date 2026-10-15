@@ -15,6 +15,7 @@ pub mod airlog;
 pub mod args_parse;
 pub mod auto_plan;
 pub mod break_planner;
+pub mod cg;
 pub mod channels;
 pub mod commercial;
 pub mod config;

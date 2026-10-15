@@ -55,7 +55,8 @@ pub async fn player(manager: ChannelManager) -> Result<(), ServiceError> {
         manager.audio_level.clone(),
         manager.text_overlay.clone(),
         desktop_control_callback(manager.clone()),
-    )?;
+    )?
+    .with_graphic_layers(manager.graphics.clone());
     let playout = open_playout(&config, output_config.clone()).await?;
     *manager.playback_control.lock().await = playout.playback_control();
     if config.output.mode == OutputMode::Desktop {

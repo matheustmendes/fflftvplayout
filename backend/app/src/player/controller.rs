@@ -1,5 +1,7 @@
 use std::{
-    cmp, fmt,
+    cmp,
+    collections::HashMap,
+    fmt,
     path::Path,
     sync::{
         Arc, Mutex as StdMutex, PoisonError,
@@ -7,8 +9,10 @@ use std::{
     },
 };
 
+use chrono::{DateTime, Utc};
 use ff_engine::{
-    AudioEffectsControl, AudioLevel, LiveLoudnessConfig, PlaybackControl, TextOverlayState,
+    AudioEffectsControl, AudioLevel, GraphicLayersState, LiveLoudnessConfig, PlaybackControl,
+    TextOverlayState,
 };
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -119,6 +123,10 @@ pub struct ChannelManager {
     pub loudness_meter: ff_engine::LoudnessMeterControl,
     pub audio_level: Arc<StdMutex<Option<AudioLevel>>>,
     pub text_overlay: TextOverlayState,
+    /// Scheduled graphics on the air; written by the CG scheduler.
+    pub graphics: GraphicLayersState,
+    /// Graphics the operator shows by hand, with the time they stay.
+    pub cg_manual: Arc<StdMutex<HashMap<i32, DateTime<Utc>>>>,
     pub playback_control: Arc<Mutex<PlaybackControl>>,
     pub shutdown: CancellationToken,
     pub system: SystemStat,
@@ -206,6 +214,8 @@ impl ChannelManager {
             loudness_meter: ff_engine::LoudnessMeterControl::default(),
             audio_level: Arc::new(StdMutex::new(None)),
             text_overlay,
+            graphics: GraphicLayersState::default(),
+            cg_manual: Arc::new(StdMutex::new(HashMap::new())),
             playback_control: Arc::new(Mutex::new(PlaybackControl::default())),
             shutdown,
             system,

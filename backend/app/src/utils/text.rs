@@ -72,7 +72,7 @@ fn parse_position(value: &str) -> TextPosition {
         .unwrap_or(TextPosition::Pixels(0))
 }
 
-fn parse_color(value: &str, fallback: RgbaColor) -> RgbaColor {
+pub(crate) fn parse_color(value: &str, fallback: RgbaColor) -> RgbaColor {
     let hex = value.trim().trim_start_matches('#');
     if hex.len() != 6 {
         return fallback;
@@ -88,6 +88,6 @@ fn parse_color(value: &str, fallback: RgbaColor) -> RgbaColor {
     }
 }
 
-fn opacity_to_alpha(opacity: f64) -> u8 {
+pub(crate) fn opacity_to_alpha(opacity: f64) -> u8 {
     (opacity.clamp(0.0, 1.0) * 255.0).round() as u8
 }
