@@ -1015,6 +1015,8 @@ async fn read_logo(storage: &std::path::Path, logo_path: &str) -> Option<Vec<u8>
 #[derive(Debug, Serialize)]
 pub struct AutoPlanStatus {
     pub settings: AutoPlanSettings,
+    /// The date (YYYY-MM-DD) of the playlist day currently on the air.
+    pub active_date: String,
     /// The day on the air and the days kept planned after it.
     pub days: Vec<AutoPlanDay>,
 }
@@ -1070,7 +1072,11 @@ pub async fn get_auto_plan(
     )
     .await?;
 
-    Ok(Json(AutoPlanStatus { settings, days }))
+    Ok(Json(AutoPlanStatus {
+        settings,
+        active_date: first.format("%Y-%m-%d").to_string(),
+        days,
+    }))
 }
 
 /// **Update automatic planning**

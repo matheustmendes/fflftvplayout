@@ -15,7 +15,7 @@ export default {
         breaks: 'Breaks',
         grid: 'Schedule',
         reports: 'Reports',
-        settings: 'Settings',
+        settings: 'Preferences',
     },
     weekday: {
         1: 'Monday',
@@ -246,6 +246,7 @@ export default {
             unchanged: 'Planned',
             edited: 'Edited by hand (not changed automatically)',
             existing: 'Already existed (not changed automatically)',
+            onAir: 'On the air (not changed automatically)',
             failed: 'Could not be planned',
         },
     },

@@ -212,6 +212,10 @@ export default {
             },
         },
     },
+    plannerTitles: {
+        breakFiller: 'Break filler',
+        dayFiller: 'Filler until the end of the day',
+    },
     errors: {
         401: 'Your session ended. Log in again.',
         403: 'You do not have permission to do that.',

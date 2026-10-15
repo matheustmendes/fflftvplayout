@@ -1756,6 +1756,8 @@ async fn automatic_planning_is_configured_run_and_reported() {
 
     assert_eq!(after["settings"]["horizon_days"], 2);
     assert_eq!(after["days"].as_array().unwrap().len(), 3);
+    assert_eq!(after["active_date"].as_str().unwrap().len(), 10);
+    assert_eq!(after["active_date"], after["days"][0]["plan_date"]);
 
     let (_, _) = send(
         &fixture,

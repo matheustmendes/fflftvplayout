@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 
 import GenericModal from '@/components/utils/GenericModal.vue'
 
+import { displayTitle } from '@/composables/displayTitle'
 import { friendlyError } from '@/composables/friendlyError'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
@@ -74,6 +75,10 @@ function resultClass(result: AirResult) {
         default:
             return 'badge-error text-white'
     }
+}
+
+function isOnAir(day: AutoPlanDay) {
+    return day.state === 'existing' && day.plan_date === autoPlan.value?.active_date
 }
 
 function autoClass(state: AutoPlanState) {
@@ -213,9 +218,11 @@ watch(() => configStore.i, load)
             <ul class="text-sm divide-y divide-base-300">
                 <li v-for="day in autoPlan.days" :key="day.plan_date" class="flex flex-wrap items-center gap-2 py-1">
                     <span class="w-24 tabular-nums">{{ shortDate(day.plan_date) }}</span>
-                    <span class="badge badge-sm" :class="autoClass(day.state)">{{
-                        t(`commercial.auto.state.${day.state}`)
-                    }}</span>
+                    <span
+                        class="badge badge-sm"
+                        :class="isOnAir(day) ? 'badge-info text-white' : autoClass(day.state)"
+                        >{{ isOnAir(day) ? t('commercial.auto.onAir') : t(`commercial.auto.state.${day.state}`) }}</span
+                    >
                     <span v-if="day.state === 'failed'" class="text-error text-xs grow min-w-0">{{ day.message }}</span>
                 </li>
             </ul>
@@ -306,7 +313,7 @@ watch(() => configStore.i, load)
                     >
                         {{ kindLabel(item.kind) }}
                     </span>
-                    <span class="truncate grow">{{ item.title || item.source }}</span>
+                    <span class="truncate grow">{{ displayTitle(item.title) || item.source }}</span>
                     <span class="w-14 text-right opacity-70">{{ formatDuration(item.duration) }}</span>
                 </li>
             </ul>

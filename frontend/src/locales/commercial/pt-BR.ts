@@ -15,7 +15,7 @@ export default {
         breaks: 'Intervalos',
         grid: 'Grade',
         reports: 'Relatórios',
-        settings: 'Ajustes',
+        settings: 'Preferências',
     },
     weekday: {
         1: 'Segunda-feira',
@@ -249,6 +249,7 @@ export default {
             unchanged: 'Montado',
             edited: 'Editado à mão (não muda sozinho)',
             existing: 'Já existia (não muda sozinho)',
+            onAir: 'Dia no ar (não muda sozinho)',
             failed: 'Não foi possível montar',
         },
     },

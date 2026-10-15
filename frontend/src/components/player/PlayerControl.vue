@@ -12,6 +12,7 @@ import { throttle } from 'es-toolkit/function'
 import { storeToRefs } from 'pinia'
 import { useEventSource } from '@vueuse/core'
 
+import { displayTitle } from '@/composables/displayTitle'
 import { authFetch } from '@/composables/authFetch'
 import { stringFormatter } from '@/composables/helper'
 import { useAuth } from '@/stores/auth'
@@ -294,13 +295,13 @@ const isRunning = computed(() => live.state === 'on_air' || live.state === 'live
 const currentTitle = computed(() => {
     const current = playlistStore.current
 
-    return current.title || filename(current.source) || t('player2.filler')
+    return displayTitle(current.title) || filename(current.source) || t('player2.filler')
 })
 const nextItem = computed(() => playlistStore.playlist[playlistStore.currentIndex + 1])
 const nextTitle = computed(() => {
     const item = nextItem.value
 
-    return item ? item.title || filename(item.source) : ''
+    return item ? displayTitle(item.title) || filename(item.source) : ''
 })
 const pillKind = computed(
     () => ({ on_air: 'ok', live: 'live', restarting: 'warn', stopped: 'bad', offline: 'idle' })[live.state] as never,

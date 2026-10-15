@@ -208,6 +208,10 @@ export default {
             },
         },
     },
+    plannerTitles: {
+        breakFiller: 'Enchimento do intervalo',
+        dayFiller: 'Enchimento até o fim do dia',
+    },
     errors: {
         401: 'Sua sessão terminou. Entre de novo.',
         403: 'Você não tem permissão para fazer isso.',
