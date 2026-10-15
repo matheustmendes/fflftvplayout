@@ -18,6 +18,7 @@ export default {
         onair: 'On air',
         commercial: 'Advertising',
         files: 'Files',
+        cg: 'Graphics (CG)',
         message: 'On-screen text',
         history: 'History',
         settings: 'Settings',

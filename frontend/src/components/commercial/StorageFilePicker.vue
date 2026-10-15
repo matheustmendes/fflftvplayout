@@ -16,7 +16,15 @@ export interface PickedFile {
     duration: number
 }
 
-const props = defineProps<{ show: boolean }>()
+const props = defineProps<{
+    show: boolean
+    title?: string
+    confirmLabel?: string
+    /** Choose one file instead of several. */
+    single?: boolean
+    /** Only show files with these extensions (lower case, no dot). */
+    extensions?: string[]
+}>()
 const emit = defineEmits<{
     (event: 'close'): void
     (event: 'pick', files: PickedFile[]): void
@@ -50,7 +58,9 @@ async function browse(path: string) {
 
         current.value = path
         folders.value = (data.folders ?? []).map((folder) => (typeof folder === 'string' ? folder : folder.name))
-        files.value = data.files ?? []
+        files.value = (data.files ?? []).filter(
+            (file) => !props.extensions || props.extensions.includes(file.name.split('.').pop()?.toLowerCase() ?? ''),
+        )
     } catch (error) {
         indexStore.msgAlert('error', friendlyError(error), 6)
     } finally {
@@ -84,7 +94,7 @@ watch(
 <template>
     <GenericModal
         :show="show"
-        :title="t('commercial.grid.pickTitle')"
+        :title="title || t('commercial.grid.pickTitle')"
         :hide-buttons="true"
         :modal-action="() => emit('close')"
     >
@@ -108,13 +118,23 @@ watch(
                     <li v-for="file in files" :key="`f-${file.name}`">
                         <label class="flex items-center gap-2 px-3 py-2 hover:bg-base-200 cursor-pointer">
                             <input
+                                v-if="single"
+                                type="radio"
+                                class="radio radio-sm"
+                                :checked="selected[0] === joinPath(file.name)"
+                                @change="selected = [joinPath(file.name)]"
+                            />
+                            <input
+                                v-else
                                 v-model="selected"
                                 type="checkbox"
                                 class="checkbox checkbox-sm"
                                 :value="joinPath(file.name)"
                             />
                             <span class="grow truncate">{{ file.name }}</span>
-                            <span class="opacity-60 tabular-nums">{{ formatDuration(file.duration) }}</span>
+                            <span v-if="file.duration" class="opacity-60 tabular-nums">{{
+                                formatDuration(file.duration)
+                            }}</span>
                         </label>
                     </li>
                     <li v-if="!folders.length && !files.length" class="p-3 opacity-70">
@@ -125,7 +145,7 @@ watch(
             <div class="flex justify-end gap-2">
                 <button class="btn btn-sm" @click="emit('close')">{{ t('cancel') }}</button>
                 <button class="btn btn-sm btn-accent" :disabled="!selected.length" @click="confirmPick">
-                    {{ t('commercial.grid.add', { count: selected.length }) }}
+                    {{ confirmLabel || t('commercial.grid.add', { count: selected.length }) }}
                 </button>
             </div>
         </div>

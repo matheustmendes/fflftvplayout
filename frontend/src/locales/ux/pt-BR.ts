@@ -18,6 +18,7 @@ export default {
         onair: 'No ar',
         commercial: 'Publicidade',
         files: 'Arquivos',
+        cg: 'Gráficos (CG)',
         message: 'Texto na tela',
         history: 'Histórico',
         settings: 'Ajustes',

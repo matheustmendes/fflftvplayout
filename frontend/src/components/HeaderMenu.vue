@@ -47,6 +47,7 @@ const items = computed<NavItem[]>(() => {
         { key: 'onair', label: t('nav.onair'), icon: 'bi-broadcast', path: '/player', main: true },
         { key: 'commercial', label: t('nav.commercial'), icon: 'bi-megaphone', path: '/commercial', main: true },
         { key: 'files', label: t('nav.files'), icon: 'bi-folder2-open', path: '/media', main: true },
+        { key: 'cg', label: t('nav.cg'), icon: 'bi-layers', path: '/cg' },
         { key: 'message', label: t('nav.message'), icon: 'bi-chat-square-text', path: '/message' },
         { key: 'history', label: t('nav.history'), icon: 'bi-clock-history', path: '/logging' },
         {

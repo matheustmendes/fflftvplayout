@@ -260,3 +260,10 @@ da sessão. Sem isso o backend não compila na nuvem, então `cargo clippy` e
 `cargo test` (exigidos pelo `backend/AGENTS.md`) não podem ser executados aqui.
 Solução: instalar as dependências por meio do **script de setup do ambiente**
 (configuração do ambiente de nuvem), que roda no início de cada sessão.
+
+## Gráficos na tela (CG) agendados
+
+Implementado: texto e imagem em posição exata, várias camadas, agendamento por
+horário/dia/período/repetição ou depois do início de um programa, e "mostrar
+agora". Desenho e limites em `.dev/cg.md`; roteiro de aceite em
+`.dev/acceptance/F5.md` (falta validar no ar, no ambiente real).

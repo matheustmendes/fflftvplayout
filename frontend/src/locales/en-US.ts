@@ -1,3 +1,4 @@
+import cg from './cg/en-US.ts'
 import commercial from './commercial/en-US.ts'
 import ux from './ux/en-US.ts'
 import settings2 from './ux/settings.en-US.ts'
@@ -12,6 +13,7 @@ export default {
         wrongLogin: 'Incorrect login data!',
         verificationSent: 'A verification code was sent to your email.',
     },
+    cg,
     commercial,
     ...ux,
     settings2,
