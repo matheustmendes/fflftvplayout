@@ -34,7 +34,7 @@ Abra no firewall só 22, 80, 443, 1935/TCP e 8890/UDP.
    <https://github.com/bluenviron/mediamtx/releases> (não use a branch
    principal) e coloque em `/opt/mediamtx/mediamtx`.
 2. Copie `deploy/relay/mediamtx.yml` para `/etc/mediamtx/mediamtx.yml` e
-   **troque `SENHA_DOS_DESTINOS`** por uma senha forte.
+   **troque as senhas** `SENHA_DO_DESTINO_1`, `SENHA_DO_DESTINO_2`... por senhas fortes (um usuário por destino).
 3. Crie o usuário e ative o serviço:
 
 ```sh
@@ -66,6 +66,21 @@ processo inteiro em 1 s se ele morrer. Falhas do canal e "dia sem programação"
 registradas como erro e seguem pelas notificações do ffplayout (e-mail; ver
 `docs/notifications.md`).
 
+### Semáforo dos destinos no Painel
+
+O `mediamtx.yml` liga a API do relay em `127.0.0.1:9997` (só nesta máquina). No
+ffplayout, como administrador, abra o Painel > **Destinos** > Configurar e
+informe:
+
+- o endereço da API: `http://127.0.0.1:9997`;
+- o nome do canal no relay: `canal1`;
+- cada destino com o **usuário** que ele usa (RTMP: `destino1`) ou o **endereço
+  IP** de onde ele puxa (SRT, que não mostra usuário na API).
+
+O Painel então mostra uma luz por destino: verde quando está conectado, vermelho
+quando não está, cinza quando o relay não responde. Destinos de m3u8 (HLS) não
+aparecem: o relay não separa quem está lendo o HLS.
+
 ### O que os destinos veem quando o ffplayout reinicia
 
 **Quando o ffplayout para de enviar, o MediaMTX desconecta todos os destinos**
@@ -95,8 +110,8 @@ cookie na primeira chamada; players e o `ffprobe` seguem sozinhos.
 
 | Formato | Link |
 |---|---|
-| RTMP | `rtmp://HOST:1935/canal1?user=destino&pass=SENHA` |
-| SRT | `srt://HOST:8890?streamid=read:canal1:destino:SENHA` |
+| RTMP | `rtmp://HOST:1935/canal1?user=destino1&pass=SENHA` |
+| SRT | `srt://HOST:8890?streamid=read:canal1:destino1:SENHA` |
 | m3u8 | `https://sinal.exemplo.com.br/canal1/index.m3u8` (usuário e senha do nginx) |
 
 ## 5. Backup

@@ -99,26 +99,6 @@ async fn wait_for_spot(fixture: &SecurityFixture, token: &str, spot_id: i64) -> 
     panic!("the conversion of spot {spot_id} did not finish");
 }
 
-async fn send(
-    fixture: &SecurityFixture,
-    method: &str,
-    uri: &str,
-    token: Option<&str>,
-    data: serde_json::Value,
-) -> (StatusCode, serde_json::Value) {
-    let response = fixture
-        .app
-        .clone()
-        .oneshot(json_request(method, uri, token, data))
-        .await
-        .unwrap();
-    let status = response.status();
-    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    let body = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
-
-    (status, body)
-}
-
 async fn create_advertiser(fixture: &SecurityFixture, token: &str, name: &str) -> i64 {
     let (status, body) = send(
         fixture,

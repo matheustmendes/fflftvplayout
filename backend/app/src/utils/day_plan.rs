@@ -61,7 +61,7 @@ pub async fn build_template_items(
 ) -> Result<Vec<WeekTemplateItem>, ServiceError> {
     if inputs.len() > MAX_PROGRAMS_PER_DAY {
         return Err(ServiceError::BadRequest(format!(
-            "a day can have at most {MAX_PROGRAMS_PER_DAY} programs"
+            "um dia pode ter no máximo {MAX_PROGRAMS_PER_DAY} programas"
         )));
     }
 
@@ -72,7 +72,7 @@ pub async fn build_template_items(
 
         if !file.is_file() {
             return Err(ServiceError::BadRequest(format!(
-                "file {relative_path:?} does not exist in the channel storage"
+                "o arquivo {relative_path:?} não existe no armazenamento do canal"
             )));
         }
 
@@ -80,7 +80,7 @@ pub async fn build_template_items(
 
         if media.duration <= 0.0 {
             return Err(ServiceError::BadRequest(format!(
-                "file {relative_path:?} could not be read as media"
+                "não foi possível ler o arquivo {relative_path:?} como mídia"
             )));
         }
 
@@ -145,7 +145,7 @@ fn campaigns_from_spots(
                 WarningCode::SpotFileMissing,
                 Severity::Warning,
                 format!(
-                    "the file of spot {:?} ({}) is missing from the storage; the spot is not used",
+                    "o arquivo do comercial {:?} ({}) não está no armazenamento; o comercial não será usado",
                     spot.spot_title, spot.file_path
                 ),
                 None,
@@ -193,7 +193,7 @@ fn missing_program_warnings(items: &[WeekTemplateItem], storage_root: &Path) -> 
                 WarningCode::ProgramFileMissing,
                 Severity::Warning,
                 format!(
-                    "the file of program {:?} ({}) is missing from the storage; its time is filled with the filler",
+                    "o arquivo do programa {:?} ({}) não está no armazenamento; o horário dele é preenchido com o filler",
                     item.title, item.source
                 ),
                 None,
@@ -330,14 +330,14 @@ pub async fn apply_plan(
         .find(|warning| warning.severity == Severity::Error)
     {
         return Err(ServiceError::Conflict(format!(
-            "the plan has a problem and was not applied: {}",
+            "o plano tem um problema e não foi aplicado: {}",
             error.message
         )));
     }
 
     if !overwrite && playlist_exists(config, date).await {
         return Err(ServiceError::Conflict(format!(
-            "a playlist for {} already exists; confirm to replace it",
+            "já existe uma playlist para {}; confirme para substituir",
             date.format("%Y-%m-%d")
         )));
     }
@@ -345,7 +345,7 @@ pub async fn apply_plan(
     let message = match write_playlist(config, plan_to_playlist(plan, channel_name, date)).await {
         // The same playlist is already in place.
         Err(ServiceError::Conflict(_)) => format!(
-            "the playlist for {} is already up to date",
+            "a playlist de {} já está atualizada",
             date.format("%Y-%m-%d")
         ),
         other => other?,
@@ -790,7 +790,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert!(message.contains("up to date"), "{message}");
+        assert!(message.contains("atualizada"), "{message}");
 
         add_spot(&fixture, "mercado", 30.0, standalone()).await;
 

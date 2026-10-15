@@ -116,7 +116,7 @@ async fn ensure_day(
     let kept = written_fingerprint.unwrap_or_default().to_string();
 
     if on_air {
-        let message = "the day on the air is never changed".to_string();
+        let message = "o dia no ar nunca é alterado".to_string();
 
         return Ok((AutoPlanState::Existing, message, kept));
     }
@@ -125,12 +125,12 @@ async fn ensure_day(
         return Ok(match written_fingerprint {
             Some(_) => (
                 AutoPlanState::Edited,
-                "the playlist was changed by hand and is left as it is".to_string(),
+                "a playlist foi alterada à mão e fica como está".to_string(),
                 kept,
             ),
             None => (
                 AutoPlanState::Existing,
-                "the day already had a playlist and is left as it is".to_string(),
+                "o dia já tinha uma playlist e fica como está".to_string(),
                 kept,
             ),
         });
@@ -205,15 +205,15 @@ pub async fn ensure_upcoming_days(
         if changed {
             match state {
                 AutoPlanState::Created | AutoPlanState::Updated => {
-                    info!(channel = channel_id; "Planned {date_text} automatically: {message}");
+                    info!(channel = channel_id; "Dia {date_text} planejado automaticamente: {message}");
                 }
                 // The day on the air and tomorrow reach the notifications (mail);
                 // a day further ahead only the log.
                 AutoPlanState::Failed if offset <= 1 => {
-                    error!(target: Target::All.as_str(), channel = channel_id; "Cannot plan {date_text} automatically: {message}");
+                    error!(target: Target::All.as_str(), channel = channel_id; "Não foi possível planejar {date_text} automaticamente: {message}");
                 }
                 AutoPlanState::Failed => {
-                    warn!(channel = channel_id; "Cannot plan {date_text} automatically: {message}");
+                    warn!(channel = channel_id; "Não foi possível planejar {date_text} automaticamente: {message}");
                 }
                 _ => {}
             }
@@ -266,7 +266,7 @@ async fn alert_missing_playlists(
 ) {
     for date in days_without_playlist(config, now, MISSING_PLAYLIST_DAYS_AHEAD).await {
         if alerted.insert((channel_id, date)) {
-            error!(target: Target::All.as_str(), channel = channel_id; "There is no playlist for {date}: the channel will play the filler");
+            error!(target: Target::All.as_str(), channel = channel_id; "Não há playlist para {date}: o canal vai tocar o filler");
         }
     }
 }

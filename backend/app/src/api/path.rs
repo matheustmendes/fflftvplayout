@@ -35,6 +35,8 @@ pub fn routes() -> Router<AppState> {
                 .route("/control/{id}/audio", put(update_audio_effects))
                 .route("/control/{id}/media/current", get(media_current))
                 .route("/control/{id}/process", post(process_control))
+                .route("/health/{id}", get(get_health))
+                .route("/relay/{id}", get(get_relay).put(update_relay))
                 .route("/cg/{id}", get(get_cgs).post(add_cg))
                 .route("/cg/{id}/{cg}", put(edit_cg).delete(remove_cg))
                 .route("/cg/{id}/{cg}/show", post(show_cg).delete(hide_cg))

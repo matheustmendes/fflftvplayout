@@ -4,24 +4,26 @@
 # serve, sem recodificar, para os destinos por RTMP, SRT e HLS (m3u8). Quando o
 # ffplayout reinicia, os destinos continuam conectados ao relay.
 #
-# Trocar SENHA_DOS_DESTINOS antes de usar (ver deploy/README.md).
+# Trocar as senhas dos destinos antes de usar (ver deploy/README.md).
 
 logLevel: info
 
-# Sem API, métricas, RTSP, WebRTC nem gravação: só o que a emissora usa.
-api: no
+# A API fica só nesta máquina: o ffplayout pergunta nela quem está conectado
+# (semáforo dos destinos no Painel). Sem métricas, RTSP, WebRTC nem gravação.
+api: yes
+apiAddress: 127.0.0.1:9997
 metrics: no
 pprof: no
 rtsp: no
 webrtc: no
 playback: no
 
-# --- RTMP: destinos puxam rtmp://HOST:1935/canal1?user=destino&pass=SENHA ---
+# --- RTMP: destinos puxam rtmp://HOST:1935/canal1?user=destino1&pass=SENHA ---
 rtmp: yes
 rtmpAddress: :1935
 rtmpEncryption: "no"
 
-# --- SRT: destinos puxam srt://HOST:8890?streamid=read:canal1:destino:SENHA ---
+# --- SRT: destinos puxam srt://HOST:8890?streamid=read:canal1:destino1:SENHA ---
 srt: yes
 srtAddress: :8890
 
@@ -55,9 +57,22 @@ authInternalUsers:
     permissions:
       - action: read
         path: canal1
-  # Os destinos só leem, com usuário e senha.
-  - user: destino
-    pass: SENHA_DOS_DESTINOS
+  # Só o ffplayout, nesta máquina, consulta a API (quem está conectado).
+  - user: any
+    pass:
+    ips: ['127.0.0.1', '::1']
+    permissions:
+      - action: api
+  # Os destinos só leem, com usuário e senha. Use um usuário para cada destino
+  # (destino1, destino2...): é assim que o Painel mostra qual deles caiu.
+  - user: destino1
+    pass: SENHA_DO_DESTINO_1
+    ips: []
+    permissions:
+      - action: read
+        path: canal1
+  - user: destino2
+    pass: SENHA_DO_DESTINO_2
     ips: []
     permissions:
       - action: read

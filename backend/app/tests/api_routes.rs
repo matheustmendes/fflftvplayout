@@ -24,6 +24,8 @@ mod commercials;
 mod configuration;
 #[path = "api/files.rs"]
 mod files;
+#[path = "api/health.rs"]
+mod health;
 #[path = "api/users.rs"]
 mod users;
 
@@ -101,6 +103,26 @@ impl Drop for SecurityFixture {
         self.state.shutdown.cancel();
         let _ = std::fs::remove_dir_all(&self.root);
     }
+}
+
+async fn send(
+    fixture: &SecurityFixture,
+    method: &str,
+    uri: &str,
+    token: Option<&str>,
+    data: serde_json::Value,
+) -> (StatusCode, serde_json::Value) {
+    let response = fixture
+        .app
+        .clone()
+        .oneshot(json_request(method, uri, token, data))
+        .await
+        .unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let body = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
+
+    (status, body)
 }
 
 async fn security_fixture() -> SecurityFixture {

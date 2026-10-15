@@ -1553,6 +1553,107 @@ impl CgWithSchedules {
     }
 }
 
+const MAX_DESTINATIONS: usize = 50;
+
+/// Which protocol a destination uses to pull the signal from the relay.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum RelayProtocol {
+    #[default]
+    Rtmp,
+    Srt,
+}
+
+/// A station or site that pulls the signal from the relay.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
+pub struct MonitorDestination {
+    #[sqlx(default)]
+    #[serde(default)]
+    pub id: i32,
+    #[sqlx(default)]
+    #[serde(default)]
+    pub channel_id: i32,
+    pub name: String,
+    #[serde(default)]
+    pub protocol: RelayProtocol,
+    /// User the destination logs in with (RTMP).
+    #[serde(default)]
+    pub match_user: String,
+    /// Address the destination connects from.
+    #[serde(default)]
+    pub match_address: String,
+    #[serde(default = "active_by_default")]
+    pub enabled: bool,
+}
+
+impl MonitorDestination {
+    pub fn validate(&self) -> Result<(), String> {
+        validate_name("destination name", &self.name)?;
+
+        if self.match_user.trim().is_empty() && self.match_address.trim().is_empty() {
+            return Err("tell the user or the address of the destination".to_string());
+        }
+
+        let simple = |value: &str| {
+            value.chars().count() <= MAX_NAME_LENGTH
+                && value
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "._-:".contains(c))
+        };
+
+        if !simple(self.match_user.trim()) || !simple(self.match_address.trim()) {
+            return Err(
+                "the user and the address may only have letters, numbers and . _ - :".to_string(),
+            );
+        }
+
+        Ok(())
+    }
+}
+
+/// Where the relay API is and which destinations to watch.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RelayConfig {
+    #[serde(default)]
+    pub api_url: String,
+    #[serde(default)]
+    pub path: String,
+    #[serde(default)]
+    pub destinations: Vec<MonitorDestination>,
+}
+
+impl RelayConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        let url = self.api_url.trim();
+
+        if !url.is_empty() && !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err("the relay address must start with http:// or https://".to_string());
+        }
+
+        if !url.is_empty() && self.path.trim().is_empty() {
+            return Err("tell the name of the channel inside the relay".to_string());
+        }
+
+        if self.path.chars().count() > MAX_NAME_LENGTH
+            || !self
+                .path
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-/".contains(c))
+        {
+            return Err("the name of the channel in the relay is not valid".to_string());
+        }
+
+        if self.destinations.len() > MAX_DESTINATIONS {
+            return Err(format!("at most {MAX_DESTINATIONS} destinations"));
+        }
+
+        self.destinations
+            .iter()
+            .try_for_each(MonitorDestination::validate)
+    }
+}
+
 #[cfg(test)]
 mod commercial_tests {
     use super::*;

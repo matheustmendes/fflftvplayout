@@ -23,6 +23,7 @@ pub mod control;
 pub mod day_plan;
 pub mod errors;
 pub mod generator;
+pub mod health;
 pub mod logging;
 pub mod mail;
 pub mod notification;

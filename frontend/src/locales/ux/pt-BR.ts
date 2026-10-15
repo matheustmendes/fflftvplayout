@@ -79,6 +79,41 @@ export default {
                 },
             },
         },
+        dest: {
+            title: 'Destinos',
+            help: 'Cada luz é uma emissora ou site que puxa o seu sinal. Verde: conectado agora. Vermelho: não está conectado. Cinza: não foi possível perguntar ao relay.',
+            configure: 'Configurar destinos',
+            notConfigured:
+                'Os destinos ainda não são monitorados. Clique em Configurar destinos para ver quem está conectado.',
+            notConfiguredUser: 'Os destinos ainda não são monitorados. Peça a um administrador para configurar.',
+            unreachable: 'Não foi possível falar com o relay. As luzes ficam cinza até ele responder.',
+            none: 'Nenhum destino cadastrado.',
+            others: '{count} conexão a mais que não é de nenhum destino da lista. | {count} conexões a mais que não são de nenhum destino da lista.',
+            state: { connected: 'Conectado', disconnected: 'Desconectado', unknown: 'Sem resposta' },
+            configHelp:
+                'Informe onde está o relay e quem puxa o sinal. O sistema pergunta ao relay quem está conectado a cada poucos segundos.',
+            apiUrl: 'Endereço da API do relay',
+            path: 'Nome do canal no relay',
+            name: 'Nome do destino',
+            protocol: 'Protocolo',
+            user: 'Usuário (RTMP)',
+            address: 'Endereço IP (SRT)',
+            enabled: 'Monitorar este destino',
+            remove: 'Tirar este destino',
+            add: 'Adicionar destino',
+            save: 'Salvar',
+            saved: 'Destinos salvos.',
+            matchHelp:
+                'Preencha o usuário com que o destino entra (RTMP) ou o endereço IP de onde ele puxa (SRT). Um dos dois basta.',
+        },
+        health: {
+            fillerMissing:
+                'O arquivo de reserva (filler) não foi encontrado. Se um vídeo falhar ou faltar programação, a tela fica preta.',
+            fillerFix: 'Corrigir',
+            relayDown: 'O relay não responde: não dá para saber se os destinos estão conectados.',
+            destDown: 'O destino "{name}" não está conectado.',
+            see: 'Ver',
+        },
         attention: {
             title: 'Precisa de atenção',
             allGood: 'Tudo certo. Nada precisa da sua atenção agora.',

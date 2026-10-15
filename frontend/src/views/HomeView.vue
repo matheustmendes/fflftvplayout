@@ -6,12 +6,14 @@ import { RouterLink } from 'vue-router'
 
 import CoverageStrip from '@/components/dashboard/CoverageStrip.vue'
 import type { CoverageDay } from '@/components/dashboard/CoverageStrip.vue'
+import DestinationsCard from '@/components/dashboard/DestinationsCard.vue'
 import NowOnAir from '@/components/dashboard/NowOnAir.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import SystemStats from '@/components/SystemStats.vue'
 
 import { authFetch } from '@/composables/authFetch'
 import { displayTitle } from '@/composables/displayTitle'
+import { healthApi, type ChannelHealth } from '@/composables/healthApi'
 import { shortDate, todayInChannel, useCommercialApi } from '@/composables/commercialApi'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
@@ -26,6 +28,7 @@ interface Attention {
 
 const SOON_DAYS = 3
 const REFRESH_MS = 30_000
+const HEALTH_REFRESH_MS = 10_000
 
 const { t } = useI18n()
 const api = useCommercialApi()
@@ -44,10 +47,12 @@ const airings = ref<Airing[]>([])
 const schedule = ref<CommercialWeekItem[]>([])
 const windows = ref<CommercialBreakWindow[]>([])
 const auto = ref<AutoPlanStatus | null>(null)
+const health = ref<ChannelHealth | null>(null)
 const program = ref<PlaylistItem[]>([])
 const loaded = ref(false)
 const showTech = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined
+let healthTimer: ReturnType<typeof setInterval> | undefined
 
 const channelId = computed(() => configStore.channels[configStore.i]?.id)
 const today = computed(() => todayInChannel(timezone.value))
@@ -110,6 +115,27 @@ const attention = computed<Attention[]>(() => {
                 to: { name: 'commercial-today', query: { date: day.plan_date } },
                 action: t('dash.attention.see'),
             })
+        }
+    }
+
+    if (health.value && !health.value.filler.ok) {
+        list.push({
+            level: 'bad',
+            text: t('dash.health.fillerMissing'),
+            to: canManage.value ? { name: 'configure-playout' } : undefined,
+            action: t('dash.health.fillerFix'),
+        })
+    }
+
+    const relay = health.value?.relay
+
+    if (relay?.configured && !relay.reachable) {
+        list.push({ level: 'warn', text: t('dash.health.relayDown') })
+    }
+
+    for (const destination of relay?.destinations ?? []) {
+        if (destination.state === 'disconnected') {
+            list.push({ level: 'bad', text: t('dash.health.destDown', { name: destination.name }) })
         }
     }
 
@@ -238,7 +264,7 @@ async function load() {
         }
     }
 
-    const [days, spotList, campaignList, rows, template, breakList, autoStatus] = await Promise.all([
+    const [days, spotList, campaignList, rows, template, breakList, autoStatus, channelHealth] = await Promise.all([
         attempt(api.get<CoverageDay[]>('/coverage?days=14'), [] as CoverageDay[]),
         attempt(api.spots(), [] as CommercialSpot[]),
         attempt(api.campaigns(), [] as CommercialCampaign[]),
@@ -246,6 +272,7 @@ async function load() {
         attempt(api.get<CommercialWeekItem[]>('/week-template'), [] as CommercialWeekItem[]),
         attempt(api.breakWindows(), [] as CommercialBreakWindow[]),
         attempt(api.autoPlan(), null as AutoPlanStatus | null),
+        attempt(healthApi.health(channelId.value), null as ChannelHealth | null),
     ])
 
     coverage.value = days
@@ -255,6 +282,7 @@ async function load() {
     schedule.value = template
     windows.value = breakList
     auto.value = autoStatus
+    health.value = channelHealth
     loaded.value = true
 
     if (days[0]) {
@@ -262,12 +290,29 @@ async function load() {
     }
 }
 
+/** The lights of the destinations change faster than the rest of the screen. */
+async function loadHealth() {
+    if (!channelId.value) {
+        return
+    }
+
+    try {
+        health.value = await healthApi.health(channelId.value)
+    } catch {
+        // Keep the last lights; the next round tries again.
+    }
+}
+
 onMounted(() => {
     void load()
     timer = setInterval(() => void load(), REFRESH_MS)
+    healthTimer = setInterval(() => void loadHealth(), HEALTH_REFRESH_MS)
 })
 
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => {
+    clearInterval(timer)
+    clearInterval(healthTimer)
+})
 watch(channelId, () => void load())
 </script>
 <template>
@@ -305,6 +350,14 @@ watch(channelId, () => void load())
                 <i class="bi bi-check-circle-fill text-2xl" /> {{ t('dash.attention.allGood') }}
             </p>
         </section>
+
+        <DestinationsCard
+            v-if="health"
+            :relay="health.relay"
+            :channel="channelId as number"
+            :can-manage="canManage"
+            @saved="load"
+        />
 
         <div class="grid gap-5 lg:grid-cols-3">
             <section class="card bg-base-100 shadow p-5 lg:col-span-2">

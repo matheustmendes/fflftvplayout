@@ -429,7 +429,7 @@ pub fn plan_day(input: &PlanInput) -> DayPlan {
         warnings.push(PlanWarning::new(
             WarningCode::NoPrograms,
             Severity::Error,
-            "the weekday has no programs in the weekly template".to_string(),
+            "o dia da semana não tem programas na grade semanal".to_string(),
             None,
         ));
 
@@ -521,7 +521,7 @@ fn sorted_windows<'a>(input: &'a PlanInput, warnings: &mut Vec<PlanWarning>) -> 
                 WarningCode::InvalidBreakTime,
                 Severity::Warning,
                 format!(
-                    "break time {:?} is not valid and was skipped",
+                    "o horário de intervalo {:?} não é válido e foi ignorado",
                     window.nominal_time
                 ),
                 Some(window.id),
@@ -590,7 +590,7 @@ fn place_windows<'a>(
                 WarningCode::NoFreeBoundary,
                 Severity::Warning,
                 format!(
-                    "the break at {} has no free place between programs",
+                    "o intervalo das {} não tem lugar livre entre os programas",
                     entry.window.nominal_time
                 ),
                 Some(entry.window.id),
@@ -712,7 +712,7 @@ fn warn_about_break(planned: &PlannedBreak, window: &PlanWindow, warnings: &mut 
             WarningCode::BreakEmpty,
             Severity::Warning,
             format!(
-                "the break at {} has no spots to play; it is filled with the filler",
+                "o intervalo das {} não tem comerciais para exibir; ele é preenchido com o filler",
                 window.nominal_time
             ),
             Some(window.id),
@@ -722,7 +722,7 @@ fn warn_about_break(planned: &PlannedBreak, window: &PlanWindow, warnings: &mut 
             WarningCode::BreakUnderfilled,
             Severity::Warning,
             format!(
-                "the break at {} is {} short of its length and is completed with the filler",
+                "o intervalo das {} está {} abaixo da duração e é completado com o filler",
                 window.nominal_time,
                 duration_text(planned.gap_sec)
             ),
@@ -754,7 +754,7 @@ fn close_the_day(
             WarningCode::DayFilled,
             Severity::Warning,
             format!(
-                "the programs and breaks are {} short of the day; the end is completed with the filler",
+                "os programas e intervalos ficam {} abaixo da duração do dia; o final é completado com o filler",
                 duration_text(missing)
             ),
             None,
@@ -764,7 +764,7 @@ fn close_the_day(
             WarningCode::DayTooLong,
             Severity::Error,
             format!(
-                "the programs and breaks are {} longer than the day; remove or shorten something",
+                "os programas e intervalos passam {} da duração do dia; retire ou encurte algo",
                 duration_text(-missing)
             ),
             None,
@@ -774,7 +774,7 @@ fn close_the_day(
             WarningCode::DaySlightlyLong,
             Severity::Warning,
             format!(
-                "the day is {} longer than its length; the last clip is trimmed",
+                "o dia passa {} da duração; o último item é cortado",
                 duration_text(-missing)
             ),
             None,
@@ -809,7 +809,7 @@ fn check_break_distances(
                 WarningCode::BreakOffGrid,
                 Severity::Warning,
                 format!(
-                    "the break at {} starts at {}, {} away from its time (tolerance {})",
+                    "o intervalo das {} começa às {}, a {} do horário (tolerância {})",
                     planned.nominal_time,
                     planned.start_time,
                     duration_text(distance),
