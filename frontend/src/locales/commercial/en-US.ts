@@ -50,6 +50,9 @@ export default {
         break_off_grid:
             'The break at {time} is far from the requested time, since breaks can only start between programs.',
         break_empty: 'The break at {time} has no spots.',
+        fixed_start_late: '{detail}',
+        break_shortened: '{detail}',
+        break_dropped: '{detail}',
         break_underfilled: 'The break at {time} has fewer spots than its length; the rest is filled.',
         day_filled: 'The day was filled with reserve content up to the day change.',
         day_slightly_long: 'The day is slightly too long and will be adjusted. {detail}',
@@ -88,6 +91,7 @@ export default {
             program: 'Program',
             spot: 'Spot',
             break_filler: 'Filler',
+            gap_filler: 'Filler',
             day_filler: 'End of day',
         },
     },
@@ -185,6 +189,13 @@ export default {
         removeText: 'The break at {time} will be removed.',
     },
     grid: {
+        fixedAdd: 'Fixed time',
+        fixedHelp:
+            'Use when this program must start at an exact time. The system fills the spare time with filler and, if the program before it runs over, tells you here and when the day is built.',
+        fixedClear: 'Remove the fixed time',
+        fixedTime: 'Starts at',
+        late: 'It will start {time} after its fixed time, because what comes before it runs over.',
+        gap: '{time} of filler before this program',
         barHelp: 'Each color is a program; its size shows how much of the day it takes.',
         endsAt: 'Ends at {time}',
         dragHelp: 'Drag to change the order',

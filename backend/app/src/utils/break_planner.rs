@@ -30,6 +30,10 @@ pub struct PlanProgram {
     pub seek: f64,
     pub out: f64,
     pub duration: f64,
+    /// Clock time (`HH:MM:SS`) the program must start at, or `None` to follow
+    /// whatever comes before it. The plan fills the gap before it, or shortens
+    /// the breaks that came earlier, and warns when it still cannot be on time.
+    pub fixed_start: Option<String>,
 }
 
 impl PlanProgram {
@@ -93,6 +97,8 @@ pub enum ItemKind {
     Spot,
     BreakFiller,
     DayFiller,
+    /// Fills the time before a program that starts at a fixed time.
+    GapFiller,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -155,6 +161,11 @@ pub enum WarningCode {
     DayTooLong,
     SpotFileMissing,
     ProgramFileMissing,
+    /// A program that must start at a fixed time cannot, because what comes
+    /// before it runs over.
+    FixedStartLate,
+    BreakShortened,
+    BreakDropped,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -284,6 +295,8 @@ fn duration_text(seconds: f64) -> String {
 /// A break window placed on the timeline.
 struct Placed<'a> {
     window: &'a PlanWindow,
+    /// Seconds from the start of the day to the nominal time.
+    offset: f64,
 }
 
 /// Usage counted over the day, so the limits and the rotation hold across
@@ -421,6 +434,198 @@ fn fill_break<'a>(
     chosen
 }
 
+/// Offsets (seconds from the start of the day) of the programs that start at a
+/// fixed time. A text that is not a time counts as no fixed time: the weekly
+/// template validates it when it is saved.
+fn fixed_offsets(input: &PlanInput) -> Vec<Option<f64>> {
+    input
+        .programs
+        .iter()
+        .map(|program| {
+            program
+                .fixed_start
+                .as_deref()
+                .and_then(parse_clock)
+                .map(|time| (time - input.day_start_sec).rem_euclid(SECONDS_PER_DAY))
+        })
+        .collect()
+}
+
+/// A fixed-start program that the day reaches too late.
+struct Late {
+    program: usize,
+    seconds: f64,
+}
+
+/// One walk through the day with the breaks placed.
+struct Walk {
+    items: Vec<PlannedItem>,
+    breaks: Vec<PlannedBreak>,
+    cursor: f64,
+    late: Vec<Late>,
+    /// Breaks that run shorter than configured: window id and the new length.
+    shortened: Vec<(i32, f64)>,
+}
+
+/// Put the programs, breaks and fillers on the timeline.
+///
+/// `limits` holds a shorter length for some windows, so a program that would
+/// start late can be saved by shortening the breaks before it.
+fn walk_day(
+    input: &PlanInput,
+    boundaries: &[Option<Placed<'_>>],
+    fixed: &[Option<f64>],
+    limits: &HashMap<i32, f64>,
+    warnings: &mut Vec<PlanWarning>,
+) -> Walk {
+    let mut usage = Usage::default();
+    let mut walk = Walk {
+        items: Vec::new(),
+        breaks: Vec::new(),
+        cursor: 0.0,
+        late: Vec::new(),
+        shortened: Vec::new(),
+    };
+
+    for boundary in 0..=input.programs.len() {
+        let anchor = fixed.get(boundary).copied().flatten();
+
+        if let Some(placed) = boundary_window(boundaries, boundary) {
+            let configured = f64::from(placed.window.duration_sec);
+            let mut length = limits.get(&placed.window.id).copied().unwrap_or(configured);
+
+            // Room between what came before and the fixed start.
+            let gap = anchor.map(|anchor| anchor - walk.cursor);
+
+            if let Some(gap) = gap
+                && gap > EPSILON
+                && gap < length
+            {
+                length = gap;
+            }
+
+            if length + EPSILON < configured {
+                walk.shortened.push((placed.window.id, length.max(0.0)));
+            }
+
+            if length >= MIN_FILLER_SECONDS {
+                // Inside a gap the break goes as close to its nominal time as
+                // the gap allows, with filler before and after it.
+                let start = match (anchor, gap) {
+                    (Some(anchor), Some(gap)) if gap > EPSILON => placed
+                        .offset
+                        .clamp(walk.cursor, (anchor - length).max(walk.cursor)),
+                    _ => walk.cursor,
+                };
+
+                add_gap_filler(input, &mut walk, start);
+
+                let (break_items, planned) = build_break(input, placed, start, length, &mut usage);
+
+                walk.cursor = start + length;
+                warn_about_break(&planned, placed.window, warnings);
+                walk.items.extend(break_items);
+                walk.breaks.push(planned);
+            }
+        }
+
+        let Some(program) = input.programs.get(boundary) else {
+            continue;
+        };
+
+        if let Some(anchor) = anchor {
+            if walk.cursor < anchor - EPSILON {
+                add_gap_filler(input, &mut walk, anchor);
+            } else if walk.cursor > anchor + EPSILON {
+                walk.late.push(Late {
+                    program: boundary,
+                    seconds: walk.cursor - anchor,
+                });
+            }
+        }
+
+        walk.items.push(PlannedItem {
+            kind: ItemKind::Program,
+            start_sec: walk.cursor,
+            start_time: clock(input.day_start_sec + walk.cursor),
+            source: program.source.clone(),
+            title: program.title.clone(),
+            seek: program.seek,
+            out: program.out,
+            duration: program.duration,
+            break_window_id: None,
+            position_in_break: None,
+            spot_id: None,
+            campaign_id: None,
+            advertiser_id: None,
+        });
+
+        walk.cursor += program.airtime();
+    }
+
+    walk
+}
+
+/// Fill the time from the cursor to `until` with the gap filler.
+fn add_gap_filler(input: &PlanInput, walk: &mut Walk, until: f64) {
+    let length = until - walk.cursor;
+
+    if length >= MIN_FILLER_SECONDS {
+        walk.items.push(filler_item(
+            input,
+            ItemKind::GapFiller,
+            walk.cursor,
+            length,
+            None,
+        ));
+        walk.cursor = until;
+    }
+}
+
+/// Shorten the last break before a late program, taking only what is needed. A
+/// break after the previous fixed program is the only one that can help,
+/// because that program starts on the dot whatever came before it.
+fn shorten_a_break(
+    boundaries: &[Option<Placed<'_>>],
+    fixed: &[Option<f64>],
+    limits: &mut HashMap<i32, f64>,
+    late: &Late,
+) -> bool {
+    let first = (0..late.program)
+        .rev()
+        .find(|index| fixed[*index].is_some())
+        .map_or(0, |index| index + 1);
+
+    for boundary in (first..=late.program).rev() {
+        let Some(placed) = boundary_window(boundaries, boundary) else {
+            continue;
+        };
+        let current = limits
+            .get(&placed.window.id)
+            .copied()
+            .unwrap_or(f64::from(placed.window.duration_sec));
+
+        if current < MIN_FILLER_SECONDS {
+            continue;
+        }
+
+        let reduced = current - late.seconds;
+
+        limits.insert(
+            placed.window.id,
+            if reduced < MIN_FILLER_SECONDS {
+                0.0
+            } else {
+                reduced
+            },
+        );
+
+        return true;
+    }
+
+    false
+}
+
 /// Build the plan of a day.
 pub fn plan_day(input: &PlanInput) -> DayPlan {
     let mut warnings = Vec::new();
@@ -444,45 +649,41 @@ pub fn plan_day(input: &PlanInput) -> DayPlan {
         };
     }
 
+    let fixed = fixed_offsets(input);
     let windows = sorted_windows(input, &mut warnings);
-    let boundaries = place_windows(input, &windows, &mut warnings);
-    let mut usage = Usage::default();
-    let mut items: Vec<PlannedItem> = Vec::new();
-    let mut breaks: Vec<PlannedBreak> = Vec::new();
-    let mut cursor = 0.0;
+    let boundaries = place_windows(input, &windows, &fixed, &mut warnings);
+    let mut limits: HashMap<i32, f64> = HashMap::new();
+    let mut unfixable: HashSet<usize> = HashSet::new();
+    let mut walk;
 
-    for boundary in 0..=input.programs.len() {
-        if let Some(placed) = boundary_window(&boundaries, boundary) {
-            let (break_items, planned) = build_break(input, placed, cursor, &mut usage);
+    // Each round either saves one late program by shortening a break, or gives
+    // it up. A break only shrinks, so the loop ends.
+    for _ in 0..=(input.programs.len() + input.windows.len()) * 4 {
+        walk = walk_day(input, &boundaries, &fixed, &limits, &mut Vec::new());
 
-            cursor += break_items.iter().map(PlannedItem::airtime).sum::<f64>();
+        let Some(late) = walk
+            .late
+            .iter()
+            .find(|late| !unfixable.contains(&late.program))
+        else {
+            break;
+        };
 
-            warn_about_break(&planned, placed.window, &mut warnings);
-
-            items.extend(break_items);
-            breaks.push(planned);
-        }
-
-        if let Some(program) = input.programs.get(boundary) {
-            items.push(PlannedItem {
-                kind: ItemKind::Program,
-                start_sec: cursor,
-                start_time: clock(input.day_start_sec + cursor),
-                source: program.source.clone(),
-                title: program.title.clone(),
-                seek: program.seek,
-                out: program.out,
-                duration: program.duration,
-                break_window_id: None,
-                position_in_break: None,
-                spot_id: None,
-                campaign_id: None,
-                advertiser_id: None,
-            });
-
-            cursor += program.airtime();
+        if !shorten_a_break(&boundaries, &fixed, &mut limits, late) {
+            unfixable.insert(late.program);
         }
     }
+
+    walk = walk_day(input, &boundaries, &fixed, &limits, &mut warnings);
+
+    warn_about_fixed_starts(input, &walk, &mut warnings);
+
+    let Walk {
+        mut items,
+        mut breaks,
+        mut cursor,
+        ..
+    } = walk;
 
     close_the_day(input, &mut items, &mut cursor, &mut warnings);
     check_break_distances(input, &mut breaks, &mut warnings);
@@ -502,6 +703,56 @@ pub fn plan_day(input: &PlanInput) -> DayPlan {
         breaks_sec,
         total_sec: cursor,
         day_length_sec: input.day_length_sec,
+    }
+}
+
+/// Tell what the fixed starts cost: breaks that had to be shorter and programs
+/// that could not be on time.
+fn warn_about_fixed_starts(input: &PlanInput, walk: &Walk, warnings: &mut Vec<PlanWarning>) {
+    for (window_id, length) in &walk.shortened {
+        let Some(window) = input.windows.iter().find(|window| window.id == *window_id) else {
+            continue;
+        };
+
+        if *length < MIN_FILLER_SECONDS {
+            warnings.push(PlanWarning::new(
+                WarningCode::BreakDropped,
+                Severity::Warning,
+                format!(
+                    "o intervalo das {} foi cancelado porque não cabe antes de um programa em horário marcado",
+                    window.nominal_time
+                ),
+                Some(window.id),
+            ));
+        } else {
+            warnings.push(PlanWarning::new(
+                WarningCode::BreakShortened,
+                Severity::Warning,
+                format!(
+                    "o intervalo das {} foi encurtado de {} para {} para um programa entrar no horário marcado",
+                    window.nominal_time,
+                    duration_text(f64::from(window.duration_sec)),
+                    duration_text(*length)
+                ),
+                Some(window.id),
+            ));
+        }
+    }
+
+    for late in &walk.late {
+        let program = &input.programs[late.program];
+
+        warnings.push(PlanWarning::new(
+            WarningCode::FixedStartLate,
+            Severity::Warning,
+            format!(
+                "o programa {:?} deveria entrar às {}, mas entra {} depois: o que vem antes dele passa do horário",
+                program.title,
+                program.fixed_start.as_deref().unwrap_or_default(),
+                duration_text(late.seconds)
+            ),
+            None,
+        ));
     }
 }
 
@@ -545,38 +796,77 @@ fn sorted_windows<'a>(input: &'a PlanInput, warnings: &mut Vec<PlanWarning>) -> 
     windows
 }
 
+/// Where each boundary between programs falls, given the breaks placed so far.
+/// A fixed-start program absorbs the delay of the breaks before it: it starts
+/// at its time unless what came before runs over.
+fn boundary_starts(
+    input: &PlanInput,
+    slots: &[Option<Placed<'_>>],
+    fixed: &[Option<f64>],
+) -> Vec<f64> {
+    let mut starts = Vec::with_capacity(slots.len());
+    let mut time = 0.0;
+
+    for (boundary, slot) in slots.iter().enumerate() {
+        starts.push(time);
+
+        if let Some(placed) = slot {
+            time += f64::from(placed.window.duration_sec);
+        }
+
+        if let Some(program) = input.programs.get(boundary) {
+            if let Some(anchor) = fixed[boundary] {
+                time = time.max(anchor);
+            }
+
+            time += program.airtime();
+        }
+    }
+
+    starts
+}
+
 /// Give every window the boundary between programs that is closest to its
-/// nominal time, counting the breaks already placed before it.
+/// nominal time, counting the breaks already placed before it. Before a program
+/// with a fixed start the break may sit anywhere in the gap, so the distance is
+/// measured to the gap, not to its first second.
 fn place_windows<'a>(
     input: &PlanInput,
     windows: &[Window<'a>],
+    fixed: &[Option<f64>],
     warnings: &mut Vec<PlanWarning>,
 ) -> Vec<Option<Placed<'a>>> {
     let count = input.programs.len();
-    let mut prefix = vec![0.0; count + 1];
-
-    for (index, program) in input.programs.iter().enumerate() {
-        prefix[index + 1] = prefix[index] + program.airtime();
-    }
-
     let mut slots: Vec<Option<Placed>> = (0..=count).map(|_| None).collect();
 
     for entry in windows {
-        let mut shift = 0.0;
+        let starts = boundary_starts(input, &slots, fixed);
+        let length = f64::from(entry.window.duration_sec);
         let mut best: Option<(usize, f64)> = None;
 
         for boundary in 0..=count {
-            if slots[boundary].is_none() {
-                let distance = (prefix[boundary] + shift - entry.offset).abs();
-
-                // Strictly closer wins, so a tie keeps the earlier boundary.
-                if best.is_none_or(|(_, closest)| distance < closest - EPSILON) {
-                    best = Some((boundary, distance));
-                }
+            if slots[boundary].is_some() {
+                continue;
             }
 
-            if let Some(placed) = &slots[boundary] {
-                shift += f64::from(placed.window.duration_sec);
+            let first = starts[boundary];
+            // The latest start that still lets the break end at the fixed time.
+            let last = fixed
+                .get(boundary)
+                .copied()
+                .flatten()
+                .map_or(first, |anchor| (anchor - length).max(first));
+            let distance = if entry.offset < first {
+                first - entry.offset
+            } else if entry.offset > last {
+                entry.offset - last
+            } else {
+                0.0
+            };
+
+            // Strictly closer wins, so a tie keeps the earlier boundary.
+            if best.is_none_or(|(_, closest)| distance < closest - EPSILON) {
+                best = Some((boundary, distance));
             }
         }
 
@@ -584,6 +874,7 @@ fn place_windows<'a>(
             Some((boundary, _)) => {
                 slots[boundary] = Some(Placed {
                     window: entry.window,
+                    offset: entry.offset,
                 });
             }
             None => warnings.push(PlanWarning::new(
@@ -613,6 +904,7 @@ fn build_break(
     input: &PlanInput,
     placed: &Placed<'_>,
     start: f64,
+    length: f64,
     usage: &mut Usage,
 ) -> (Vec<PlannedItem>, PlannedBreak) {
     let window = placed.window;
@@ -621,7 +913,7 @@ fn build_break(
         input.date, window.id, window.nominal_time
     ));
     let mut rng = Rng::new(seed);
-    let duration = f64::from(window.duration_sec);
+    let duration = length;
     let chosen = fill_break(duration, &input.campaigns, usage, &mut rng);
     let mut items = Vec::new();
     let mut cursor = start;
@@ -664,7 +956,7 @@ fn build_break(
         nominal_time: window.nominal_time.clone(),
         start_time: clock(input.day_start_sec + start),
         distance_sec: 0.0,
-        duration_sec: window.duration_sec,
+        duration_sec: duration.round() as i32,
         spots_sec,
         gap_sec: gap.max(0.0),
         spots: chosen.len(),
@@ -693,6 +985,7 @@ fn filler_item(
         source,
         title: match kind {
             ItemKind::BreakFiller => "Break filler".to_string(),
+            ItemKind::GapFiller => "Gap filler".to_string(),
             _ => "Day filler".to_string(),
         },
         seek: 0.0,
@@ -832,7 +1125,15 @@ mod tests {
             seek: 0.0,
             out: minutes * 60.0,
             duration: minutes * 60.0,
+            fixed_start: None,
         }
+    }
+
+    /// A program that must start at `time`.
+    fn fixed(mut program: PlanProgram, time: &str) -> PlanProgram {
+        program.fixed_start = Some(time.to_string());
+
+        program
     }
 
     fn window(id: i32, time: &str, duration: i32) -> PlanWindow {
@@ -1461,5 +1762,153 @@ mod tests {
         assert_eq!(parse_clock("24:00:00"), None);
         assert_eq!(parse_clock("20:00"), None);
         assert_eq!(parse_clock("20:00:00:00"), None);
+    }
+
+    fn item_at(plan: &DayPlan, kind: ItemKind, index: usize) -> &PlannedItem {
+        plan.items
+            .iter()
+            .filter(|item| item.kind == kind)
+            .nth(index)
+            .unwrap()
+    }
+
+    #[test]
+    fn the_gap_before_a_fixed_program_is_filled_and_the_program_starts_on_time() {
+        let programs = vec![program("a", 20.0), fixed(program("b", 20.0), "00:30:00")];
+        let result = plan(&input(programs, Vec::new(), 3000.0));
+
+        assert_eq!(
+            kinds(&result),
+            [ItemKind::Program, ItemKind::GapFiller, ItemKind::Program]
+        );
+        assert_eq!(item_at(&result, ItemKind::GapFiller, 0).airtime(), 600.0);
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 1).start_time,
+            "00:30:00"
+        );
+        assert_eq!(result.total_sec, 3000.0);
+        assert!(!result.has_errors());
+        assert!(!codes(&result).contains(&WarningCode::FixedStartLate));
+    }
+
+    #[test]
+    fn a_break_in_the_gap_sits_at_its_nominal_time_with_filler_around_it() {
+        let programs = vec![program("a", 20.0), fixed(program("b", 20.0), "00:40:00")];
+        let mut data = input(programs, vec![window(1, "00:30:00", 60)], 3600.0);
+
+        data.campaigns = vec![campaign(1, 1, vec![spot(1, 60.0)])];
+
+        let result = plan(&data);
+
+        assert_eq!(
+            kinds(&result),
+            [
+                ItemKind::Program,
+                ItemKind::GapFiller,
+                ItemKind::Spot,
+                ItemKind::GapFiller,
+                ItemKind::Program,
+            ]
+        );
+        assert_eq!(item_at(&result, ItemKind::Spot, 0).start_time, "00:30:00");
+        assert_eq!(result.breaks[0].start_time, "00:30:00");
+        assert_eq!(result.breaks[0].distance_sec, 0.0);
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 1).start_time,
+            "00:40:00"
+        );
+        assert!(!codes(&result).contains(&WarningCode::BreakOffGrid));
+    }
+
+    #[test]
+    fn a_break_that_does_not_fit_the_gap_is_shortened_and_the_program_is_on_time() {
+        let programs = vec![program("a", 20.0), fixed(program("b", 20.0), "00:20:30")];
+        let mut data = input(programs, vec![window(1, "00:19:00", 120)], 2430.0);
+
+        data.campaigns = vec![campaign(1, 1, vec![spot(1, 30.0), spot(2, 60.0)])];
+
+        let result = plan(&data);
+
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 1).start_time,
+            "00:20:30"
+        );
+        assert_eq!(result.breaks[0].duration_sec, 30);
+        assert_eq!(spot_ids(&result), [1], "only the spot that fits in 30 s");
+        assert!(codes(&result).contains(&WarningCode::BreakShortened));
+        assert!(!codes(&result).contains(&WarningCode::FixedStartLate));
+    }
+
+    #[test]
+    fn earlier_breaks_give_back_the_time_a_fixed_program_needs() {
+        let programs = vec![
+            program("a", 10.0),
+            program("b", 10.0),
+            fixed(program("c", 10.0), "00:20:30"),
+        ];
+        let windows = vec![window(1, "00:10:00", 60), window(2, "00:20:00", 60)];
+        let result = plan(&input(programs, windows, 1830.0));
+
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 2).start_time,
+            "00:20:30"
+        );
+        assert!(!codes(&result).contains(&WarningCode::FixedStartLate));
+        assert!(codes(&result).contains(&WarningCode::BreakDropped));
+        assert!(codes(&result).contains(&WarningCode::BreakShortened));
+        assert_eq!(result.breaks.len(), 1, "the later break was cancelled");
+        assert_eq!(result.breaks[0].duration_sec, 30);
+    }
+
+    #[test]
+    fn a_program_that_cannot_be_on_time_is_flagged_and_not_hidden() {
+        let programs = vec![program("a", 30.0), fixed(program("b", 10.0), "00:20:00")];
+        let result = plan(&input(programs, Vec::new(), 2400.0));
+        let late = result
+            .warnings
+            .iter()
+            .find(|warning| warning.code == WarningCode::FixedStartLate)
+            .expect("the late program must be reported");
+
+        assert_eq!(late.severity, Severity::Warning);
+        assert!(late.message.contains("00:20:00"), "{}", late.message);
+        assert!(late.message.contains("10 min"), "{}", late.message);
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 1).start_time,
+            "00:30:00"
+        );
+        assert!(!result.has_errors(), "the plan can still be applied");
+    }
+
+    #[test]
+    fn a_fixed_time_counts_from_the_start_of_the_day_of_the_channel() {
+        let programs = vec![program("a", 30.0), fixed(program("b", 30.0), "07:00:00")];
+        let mut data = input(programs, Vec::new(), 7200.0);
+
+        data.day_start_sec = 6.0 * 3600.0;
+
+        let result = plan(&data);
+
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 0).start_time,
+            "06:00:00"
+        );
+        assert_eq!(item_at(&result, ItemKind::GapFiller, 0).airtime(), 1800.0);
+        assert_eq!(
+            item_at(&result, ItemKind::Program, 1).start_time,
+            "07:00:00"
+        );
+    }
+
+    #[test]
+    fn programs_without_a_fixed_time_plan_exactly_as_before() {
+        let with_none = plan(&input(
+            three_programs(),
+            vec![window(1, "00:19:00", 60)],
+            3660.0,
+        ));
+
+        assert!(!kinds(&with_none).contains(&ItemKind::GapFiller));
+        assert!(!codes(&with_none).contains(&WarningCode::FixedStartLate));
     }
 }

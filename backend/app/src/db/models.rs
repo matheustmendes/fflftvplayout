@@ -1102,6 +1102,10 @@ pub struct WeekTemplateItem {
     pub in_sec: f64,
     pub out_sec: f64,
     pub duration_sec: f64,
+    /// Clock time (`HH:MM:SS`) the program must start at; `None` follows the
+    /// program before it.
+    #[serde(default)]
+    pub fixed_start: Option<String>,
 }
 
 impl WeekTemplateItem {
@@ -1125,6 +1129,10 @@ impl WeekTemplateItem {
 
         if !self.duration_sec.is_finite() || self.duration_sec <= 0.0 {
             return Err("the duration of a program is unknown".to_string());
+        }
+
+        if let Some(fixed_start) = &self.fixed_start {
+            parse_clock("the fixed start time", fixed_start)?;
         }
 
         if self.title.chars().count() > MAX_NAME_LENGTH {
@@ -1908,6 +1916,7 @@ mod commercial_tests {
             in_sec,
             out_sec,
             duration_sec,
+            fixed_start: None,
         };
 
         assert!(item("show.mp4", 0.0, 1800.0, 1800.0).validate().is_ok());

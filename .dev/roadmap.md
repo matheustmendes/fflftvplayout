@@ -117,12 +117,21 @@ horário e o EPG continuam valendo, e o engine não muda.
 
 ### Fase 2: grade e comerciais
 - 2.1 Grade-modelo por dia da semana.
-- 2.2 Horário fixo para programas (item "entra às HH:MM"). **Em espera
-  (decisão do usuário).** Quando for feito, é **opcional por programa**: o
-  operador decide se um programa entra em hora marcada; a grade se readequa
-  quando for possível (ajustando o enchimento e os intervalos) e, quando não for,
-  **sinaliza os conflitos** que isso causa (por exemplo, o programa anterior
-  passa do horário) em vez de esconder ou quebrar a grade.
+- 2.2 Horário fixo para programas (item "entra às HH:MM"). **Feito.** É
+  **opcional por programa** (botão de despertador na linha da grade). Regras do
+  planejador (`utils/break_planner.rs`):
+  - Sobrou tempo antes do programa: completa com enchimento (`gap_filler`). Se há
+    um intervalo cuja hora cai nessa folga, ele fica o mais perto possível da
+    hora pedida, com enchimento antes e depois.
+  - O intervalo não cabe na folga: é **encurtado** (menos comerciais) e avisa
+    (`break_shortened`); se não cabe nada, é **cancelado** (`break_dropped`).
+  - O programa anterior passa do horário: o planejador devolve o tempo encurtando
+    os intervalos desde o programa fixo anterior, do último para o primeiro.
+  - Não dá para devolver tempo suficiente: o programa entra atrasado e o plano
+    **sinaliza** (`fixed_start_late`, aviso, o plano ainda pode ser aplicado). A
+    grade mostra o atraso em vermelho na própria linha.
+  - Sem horário fixo nada muda. O horário conta a partir do início do dia do
+    canal. Roteiro: `.dev/acceptance/F7.md`.
 - 2.3 Módulo de comerciais (seção 3), com ingestão MXF.
 - 2.4 Registro do que foi ao ar (as-run) e relatório por anunciante.
 

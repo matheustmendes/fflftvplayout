@@ -59,7 +59,9 @@ function warningText(warning: PlanWarning) {
 
     const window = preview.value?.plan.breaks.find((item) => item.window_id === warning.window_id)
 
-    return te(key) ? t(key, { detail: warning.message, time: window?.nominal_time ?? '' }) : warning.message
+    const detail = warning.message.charAt(0).toUpperCase() + warning.message.slice(1)
+
+    return te(key) ? t(key, { detail, time: window?.nominal_time ?? '' }) : warning.message
 }
 
 function resultClass(result: AirResult) {

@@ -4,6 +4,7 @@ import { i18n } from '@/i18n'
 const PLANNER_TITLES: Record<string, string> = {
     'Break filler': 'plannerTitles.breakFiller',
     'Day filler': 'plannerTitles.dayFiller',
+    'Gap filler': 'plannerTitles.gapFiller',
 }
 
 export function displayTitle(title: string | null | undefined): string {

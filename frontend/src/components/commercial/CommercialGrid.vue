@@ -17,6 +17,8 @@ interface GridItem {
     source: string
     title: string
     duration: number
+    /** `HH:MM` the program must start at; empty follows the program before it. */
+    fixed: string
 }
 
 const DAY_SECONDS = 86400
@@ -38,23 +40,47 @@ const dragFrom = ref<number | null>(null)
 const dragOver = ref<number | null>(null)
 
 const dirty = computed(() => JSON.stringify(items.value) !== saved.value)
-const totalSec = computed(() => items.value.reduce((sum, item) => sum + item.duration, 0))
+const totalSec = computed(() => timeline.value.end - dayStart.value)
 const dayLength = computed(() => configStore.playlistLength || DAY_SECONDS)
 const overflow = computed(() => totalSec.value - dayLength.value)
 const dayStart = computed(() => configStore.playout.playlist?.startInSec ?? 0)
 
-/** When each program starts on the clock, from the start of the day. */
-const starts = computed(() => {
+function fixedSeconds(time: string): number | null {
+    const [hours, minutes] = time.split(':').map(Number)
+
+    if (!time || Number.isNaN(hours) || Number.isNaN(minutes)) {
+        return null
+    }
+
+    // A fixed time counts from the start of the day of the channel.
+    return (
+        dayStart.value + ((((hours * 3600 + minutes * 60 - dayStart.value) % DAY_SECONDS) + DAY_SECONDS) % DAY_SECONDS)
+    )
+}
+
+/**
+ * When each program starts on the clock, from the start of the day: a program
+ * with a fixed time waits for it (the gap is filler) and, when what comes before
+ * it runs over, it starts late and the row says so.
+ */
+const timeline = computed(() => {
     let at = dayStart.value
 
-    return items.value.map((item) => {
-        const begin = at
+    const rows = items.value.map((item) => {
+        const target = fixedSeconds(item.fixed)
+        const gap = target !== null && target > at ? target - at : 0
+        const late = target !== null && at - target > 1 ? at - target : 0
+        const begin = at + gap
 
-        at += item.duration
+        at = begin + item.duration
 
-        return begin
+        return { begin, gap, late }
     })
+
+    return { rows, end: at }
 })
+
+const starts = computed(() => timeline.value.rows.map((row) => row.begin))
 
 function clock(seconds: number) {
     const day = ((seconds % 86400) + 86400) % 86400
@@ -78,6 +104,7 @@ async function load() {
             source: row.source,
             title: row.title,
             duration: row.out_sec - row.in_sec,
+            fixed: (row.fixed_start ?? '').slice(0, 5),
         }))
         saved.value = JSON.stringify(items.value)
     } catch (error) {
@@ -146,11 +173,13 @@ function addPicked(files: PickedFile[]) {
             source: file.path,
             title: file.name.replace(/\.[^.]+$/, ''),
             duration: file.duration,
+            fixed: '',
         })),
     ]
 }
 
-const payload = () => items.value.map((item) => ({ source: item.source, title: item.title }))
+const payload = () =>
+    items.value.map((item) => ({ source: item.source, title: item.title, fixed_start: item.fixed || null }))
 
 async function save() {
     try {
@@ -251,7 +280,23 @@ watch(() => configStore.i, load)
                             :title="t('commercial.grid.dragHelp')"
                         />
                         <span class="w-6 text-right opacity-60">{{ index + 1 }}</span>
-                        <span class="w-20 shrink-0 tabular-nums opacity-70">{{ clock(starts[index] ?? 0) }}</span>
+                        <span
+                            class="w-20 shrink-0 tabular-nums"
+                            :class="timeline.rows[index]?.late ? 'text-error font-semibold' : 'opacity-70'"
+                            :title="
+                                timeline.rows[index]?.late
+                                    ? t('commercial.grid.late', { time: formatDuration(timeline.rows[index].late) })
+                                    : timeline.rows[index]?.gap
+                                      ? t('commercial.grid.gap', { time: formatDuration(timeline.rows[index].gap) })
+                                      : undefined
+                            "
+                        >
+                            <i
+                                v-if="timeline.rows[index]?.late"
+                                class="bi bi-exclamation-triangle-fill me-1 text-warning"
+                            />
+                            {{ clock(starts[index] ?? 0) }}
+                        </span>
                         <input
                             v-if="canManage"
                             v-model="item.title"
@@ -261,6 +306,31 @@ watch(() => configStore.i, load)
                         <span v-else class="grow truncate">{{ item.title }}</span>
                         <span class="w-16 text-right tabular-nums opacity-70">{{ formatDuration(item.duration) }}</span>
                         <template v-if="canManage">
+                            <span v-if="item.fixed" class="flex items-center gap-1">
+                                <input
+                                    v-model="item.fixed"
+                                    type="time"
+                                    class="input input-xs w-24"
+                                    :aria-label="t('commercial.grid.fixedTime')"
+                                />
+                                <button
+                                    class="btn btn-xs btn-ghost"
+                                    :title="t('commercial.grid.fixedClear')"
+                                    :aria-label="t('commercial.grid.fixedClear')"
+                                    @click="item.fixed = ''"
+                                >
+                                    <i class="bi bi-alarm-fill text-accent" />
+                                </button>
+                            </span>
+                            <button
+                                v-else
+                                class="btn btn-xs btn-ghost"
+                                :title="t('commercial.grid.fixedHelp')"
+                                :aria-label="t('commercial.grid.fixedAdd')"
+                                @click="item.fixed = clock(starts[index] ?? 0).slice(0, 5)"
+                            >
+                                <i class="bi bi-alarm" />
+                            </button>
                             <button
                                 class="btn btn-xs btn-ghost"
                                 :disabled="index === 0"

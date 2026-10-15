@@ -258,5 +258,9 @@ export default {
         other: 'It could not be done.',
         network: 'No connection to the server. Check the internet.',
     },
-    plannerTitles: { breakFiller: 'Break filler', dayFiller: 'Filler until the end of the day' },
+    plannerTitles: {
+        breakFiller: 'Break filler',
+        dayFiller: 'Filler until the end of the day',
+        gapFiller: 'Filler until the fixed time',
+    },
 }

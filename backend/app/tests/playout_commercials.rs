@@ -65,6 +65,7 @@ fn program(source: &str, seconds: f64) -> WeekTemplateItem {
         in_sec: 0.0,
         out_sec: seconds,
         duration_sec: seconds,
+        fixed_start: None,
     }
 }
 

@@ -1855,3 +1855,57 @@ async fn coverage_shows_which_upcoming_days_have_a_playlist_and_a_schedule() {
 
     assert_eq!(code, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+#[serial]
+async fn a_program_can_start_at_a_fixed_time_and_the_plan_fills_the_gap() {
+    let fixture = commercial_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+
+    for (fixed, expected) in [
+        ("00:10", StatusCode::OK),
+        ("25:61", StatusCode::BAD_REQUEST),
+    ] {
+        let (status, saved) = send(
+            &fixture,
+            "PUT",
+            "/api/commercials/1/week-template/4",
+            Some(&admin),
+            json!({ "items": [{ "source": "ad.mp4", "fixed_start": fixed }] }),
+        )
+        .await;
+
+        assert_eq!(status, expected, "{saved}");
+
+        if expected == StatusCode::OK {
+            assert_eq!(
+                saved[0]["fixed_start"], "00:10:00",
+                "the time is stored with seconds"
+            );
+        } else {
+            assert!(saved.to_string().contains("HH:MM"), "{saved}");
+        }
+    }
+
+    // 2026-10-15 is a Thursday: the clip would start at 00:00, the fixed time is 00:10.
+    let (status, preview) = send(
+        &fixture,
+        "GET",
+        "/api/commercials/1/plan/2026-10-15",
+        Some(&admin),
+        json!(null),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{preview}");
+
+    let items = preview["plan"]["items"].as_array().unwrap();
+    let kinds: Vec<_> = items
+        .iter()
+        .map(|item| item["kind"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(kinds[0], "gap_filler");
+    assert_eq!(kinds[1], "program");
+    assert_eq!(items[1]["start_time"], "00:10:00");
+}

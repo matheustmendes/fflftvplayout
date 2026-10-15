@@ -31,9 +31,9 @@ pub async fn replace_week_template_day(
     items: &[WeekTemplateItem],
 ) -> Result<(), ProcessError> {
     const INSERT: &str = "INSERT INTO week_template_item (
-            channel_id, weekday, position, source, title, in_sec, out_sec, duration_sec
+            channel_id, weekday, position, source, title, in_sec, out_sec, duration_sec, fixed_start
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)";
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)";
 
     let mut transaction = pool.begin().await?;
 
@@ -53,6 +53,7 @@ pub async fn replace_week_template_day(
             .bind(item.in_sec)
             .bind(item.out_sec)
             .bind(item.duration_sec)
+            .bind(&item.fixed_start)
             .execute(&mut *transaction)
             .await?;
     }
@@ -95,6 +96,7 @@ mod tests {
             in_sec: 0.0,
             out_sec,
             duration_sec: out_sec,
+            fixed_start: None,
         }
     }
 

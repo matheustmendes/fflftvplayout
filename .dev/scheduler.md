@@ -189,7 +189,7 @@ Arquivo: `backend/app/src/player/input/playlist.rs`.
 Itens encontrados na leitura. Os marcados como *hipótese* precisam ser
 confirmados com o playout rodando.
 
-1. **Sem horário fixo.** Um programa que precisa entrar às 20:00 em ponto só
+1. **Sem horário fixo.** *(Resolvido na fase 2.2: ver `.dev/roadmap.md`.)* Um programa que precisa entrar às 20:00 em ponto só
    entra no horário se a soma das durações anteriores estiver exata. Não há
    tipo de item "hard start" nem "fill até". É a maior lacuna para uma grade
    de TV tradicional.

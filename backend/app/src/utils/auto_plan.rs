@@ -366,6 +366,7 @@ mod tests {
             in_sec: 0.0,
             out_sec: 1200.0,
             duration_sec: 1200.0,
+            fixed_start: None,
         }
     }
 

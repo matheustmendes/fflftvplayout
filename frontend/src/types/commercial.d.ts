@@ -71,6 +71,7 @@ declare global {
         in_sec: number
         out_sec: number
         duration_sec: number
+        fixed_start: string | null
     }
 
     interface CommercialSettings {
@@ -87,7 +88,7 @@ declare global {
         footer_note: string
     }
 
-    type PlanItemKind = 'program' | 'spot' | 'break_filler' | 'day_filler'
+    type PlanItemKind = 'program' | 'spot' | 'break_filler' | 'day_filler' | 'gap_filler'
 
     interface PlanItem {
         kind: PlanItemKind

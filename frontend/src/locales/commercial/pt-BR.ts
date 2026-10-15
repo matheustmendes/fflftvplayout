@@ -56,6 +56,9 @@ export default {
         day_slightly_long: 'O dia passou um pouco do tamanho e será ajustado. {detail}',
         day_too_long: 'O dia ficou maior do que cabe. Tire programas da grade ou reduza intervalos. {detail}',
         spot_file_missing: 'O arquivo de um comercial sumiu do armazenamento e ele não será usado. {detail}',
+        fixed_start_late: '{detail}',
+        break_shortened: '{detail}',
+        break_dropped: '{detail}',
         program_file_missing: 'O arquivo de um programa sumiu do armazenamento; o tempo dele será preenchido. {detail}',
     },
     today: {
@@ -90,6 +93,7 @@ export default {
             program: 'Programa',
             spot: 'Comercial',
             break_filler: 'Enchimento',
+            gap_filler: 'Enchimento',
             day_filler: 'Fim do dia',
         },
     },
@@ -188,6 +192,13 @@ export default {
         removeText: 'O intervalo das {time} será removido.',
     },
     grid: {
+        fixedAdd: 'Hora marcada',
+        fixedHelp:
+            'Use quando este programa precisa entrar em um horário exato. O sistema completa o tempo que sobrar com enchimento e, se o programa anterior passar do horário, avisa aqui e na hora de montar o dia.',
+        fixedClear: 'Tirar a hora marcada',
+        fixedTime: 'Entra às',
+        late: 'Vai entrar {time} depois da hora marcada, porque o que vem antes passa do horário.',
+        gap: '{time} de enchimento antes deste programa',
         barHelp: 'Cada cor é um programa; o tamanho mostra quanto do dia ele ocupa.',
         endsAt: 'Termina às {time}',
         dragHelp: 'Arraste para trocar a ordem',

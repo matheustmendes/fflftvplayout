@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use chrono::{Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, NaiveTime, Utc};
 use log::*;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
@@ -40,6 +40,10 @@ pub struct WeekItemInput {
     pub in_sec: Option<f64>,
     #[serde(default)]
     pub out_sec: Option<f64>,
+    /// Clock time (`HH:MM`) the program must start at; empty or missing follows
+    /// the program before it.
+    #[serde(default)]
+    pub fixed_start: Option<String>,
 }
 
 /// What planning a date would do, without changing anything.
@@ -105,6 +109,7 @@ pub async fn build_template_items(
             in_sec: input.in_sec.unwrap_or(0.0),
             out_sec: input.out_sec.unwrap_or(media.duration),
             duration_sec: media.duration,
+            fixed_start: normalized_fixed_start(input.fixed_start.as_deref())?,
         };
 
         item.validate().map_err(ServiceError::BadRequest)?;
@@ -127,7 +132,24 @@ fn program_from_item(item: WeekTemplateItem) -> PlanProgram {
         seek: item.in_sec,
         out: item.out_sec,
         duration: item.duration_sec,
+        fixed_start: item.fixed_start,
     }
+}
+
+/// `20:00` and `20:00:00` are the same time; an empty text means none.
+fn normalized_fixed_start(text: Option<&str>) -> Result<Option<String>, ServiceError> {
+    let Some(text) = text.map(str::trim).filter(|text| !text.is_empty()) else {
+        return Ok(None);
+    };
+    let time = NaiveTime::parse_from_str(text, "%H:%M:%S")
+        .or_else(|_| NaiveTime::parse_from_str(text, "%H:%M"))
+        .map_err(|_| {
+            ServiceError::BadRequest(format!(
+                "o horário marcado {text:?} não é válido; use o formato HH:MM"
+            ))
+        })?;
+
+    Ok(Some(time.format("%H:%M:%S").to_string()))
 }
 
 /// Group the eligible spots by campaign. A spot whose file is gone from the
@@ -404,6 +426,7 @@ mod tests {
             in_sec: 0.0,
             out_sec: 1200.0,
             duration_sec: 1200.0,
+            fixed_start: None,
         };
 
         handles::replace_week_template_day(
@@ -856,6 +879,7 @@ mod tests {
             title: None,
             in_sec: None,
             out_sec: None,
+            fixed_start: None,
         }
     }
 
@@ -889,6 +913,7 @@ mod tests {
                 title: Some("  Evening news ".to_string()),
                 in_sec: Some(1.0),
                 out_sec: Some(3.0),
+                fixed_start: Some(" 20:30 ".to_string()),
             }],
         )
         .await
@@ -933,6 +958,7 @@ mod tests {
                 title: None,
                 in_sec: Some(5.0),
                 out_sec: Some(2.0),
+                fixed_start: None,
             }],
         )
         .await;
