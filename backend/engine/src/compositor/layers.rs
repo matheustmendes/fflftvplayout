@@ -6,12 +6,49 @@ use crate::{
         logo::{LogoOverlay, blend_logo},
         text::TextOverlay,
     },
-    utils::config::{GraphicContent, GraphicLayer, GraphicLayersState, OutputConfig},
+    utils::config::{GraphicContent, GraphicLayer, GraphicLayersState, OutputConfig, TextConfig},
 };
 
 enum LayerOverlay {
     Text(TextOverlay),
-    Image(LogoOverlay),
+    Image(LogoOverlay, ImageFade),
+}
+
+/// Fade of an image layer, in output frames. Text layers fade inside
+/// `TextOverlay`.
+struct ImageFade {
+    in_frames: i64,
+    out_frames: i64,
+    start_pts: i64,
+    end_pts: Option<i64>,
+}
+
+fn seconds_to_frames(seconds: f64, fps: u32) -> i64 {
+    if seconds.is_finite() && seconds > 0.0 {
+        (seconds * f64::from(fps)).round().max(1.0) as i64
+    } else {
+        0
+    }
+}
+
+impl ImageFade {
+    /// How visible the image is at `pts`: 0 at the start of a fade in, 1 in
+    /// the middle and 0 at the end of a fade out.
+    fn factor(&self, pts: i64) -> f64 {
+        let mut factor: f64 = 1.0;
+
+        if self.in_frames > 0 {
+            factor = factor.min((pts - self.start_pts).max(0) as f64 / self.in_frames as f64);
+        }
+
+        if self.out_frames > 0
+            && let Some(end) = self.end_pts
+        {
+            factor = factor.min((end - pts).max(0) as f64 / self.out_frames as f64);
+        }
+
+        factor.clamp(0.0, 1.0)
+    }
 }
 
 struct LoadedLayer {
@@ -88,7 +125,7 @@ impl RuntimeGraphicLayers {
         for loaded in &mut self.loaded {
             match &mut loaded.overlay {
                 LayerOverlay::Text(text) => text.blend(frame, pts, scroll_pts),
-                LayerOverlay::Image(image) => blend_logo(frame, image, 1.0),
+                LayerOverlay::Image(image, fade) => blend_logo(frame, image, fade.factor(pts)),
             }
         }
     }
@@ -99,17 +136,26 @@ impl RuntimeGraphicLayers {
         pts: i64,
         scroll_pts: i64,
     ) -> anyhow::Result<LayerOverlay> {
+        let end_pts = layer
+            .visible_seconds
+            .map(|seconds| pts + seconds_to_frames(seconds, self.fps));
+
         match &layer.content {
             GraphicContent::Text(text) => {
+                let text = TextConfig {
+                    fade_in_seconds: layer.fade_in_seconds,
+                    fade_out_seconds: layer.fade_out_seconds,
+                    ..text.clone()
+                };
                 let overlay = TextOverlay::load(
-                    text,
+                    &text,
                     "",
                     self.width,
                     self.height,
                     self.fps,
                     pts,
                     scroll_pts,
-                    None,
+                    end_pts,
                 )?;
 
                 overlay
@@ -117,7 +163,15 @@ impl RuntimeGraphicLayers {
                     .ok_or_else(|| anyhow::anyhow!("the text is empty"))
             }
             GraphicContent::Image(image) => {
-                LogoOverlay::load(image, self.width, self.height).map(LayerOverlay::Image)
+                let fade = ImageFade {
+                    in_frames: seconds_to_frames(layer.fade_in_seconds, self.fps),
+                    out_frames: seconds_to_frames(layer.fade_out_seconds, self.fps),
+                    start_pts: pts,
+                    end_pts,
+                };
+
+                LogoOverlay::load(image, self.width, self.height)
+                    .map(|overlay| LayerOverlay::Image(overlay, fade))
             }
         }
     }
@@ -174,16 +228,16 @@ mod tests {
 
         let state = GraphicLayersState::default();
 
-        state.set(vec![GraphicLayer {
-            id: 1,
-            content: GraphicContent::Text(TextConfig {
+        state.set(vec![GraphicLayer::new(
+            1,
+            GraphicContent::Text(TextConfig {
                 text: Some("WWWW".to_string()),
                 font_size: 40.0,
                 position_x: TextPosition::Pixels(320),
                 position_y: TextPosition::Pixels(200),
                 ..TextConfig::default()
             }),
-        }]);
+        )]);
 
         let mut layers = layers_for(&state);
         let mut frame = black_frame();
@@ -214,24 +268,24 @@ mod tests {
         let state = GraphicLayersState::default();
 
         state.set(vec![
-            GraphicLayer {
-                id: 1,
-                content: GraphicContent::Image(LogoConfig {
+            GraphicLayer::new(
+                1,
+                GraphicContent::Image(LogoConfig {
                     path: logo.to_string_lossy().to_string(),
                     scale: Some("100:-1".to_string()),
                     opacity: 1.0,
                     position: "400:20".to_string(),
                 }),
-            },
-            GraphicLayer {
-                id: 2,
-                content: GraphicContent::Image(LogoConfig {
+            ),
+            GraphicLayer::new(
+                2,
+                GraphicContent::Image(LogoConfig {
                     path: "/nonexistent/none.png".to_string(),
                     scale: None,
                     opacity: 1.0,
                     position: "0:0".to_string(),
                 }),
-            },
+            ),
         ]);
 
         let mut layers = layers_for(&state);
@@ -243,5 +297,112 @@ mod tests {
 
         assert!(bright_pixels(&frame, 400, 20, 100, 100) > 100);
         assert_eq!(bright_pixels(&frame, 0, 0, 380, HEIGHT as usize), 0);
+    }
+
+    #[test]
+    fn an_image_fades_in_and_out_around_its_time_on_the_air() {
+        let fade = ImageFade {
+            in_frames: 10,
+            out_frames: 10,
+            start_pts: 100,
+            end_pts: Some(200),
+        };
+
+        assert_eq!(fade.factor(100), 0.0);
+        assert!((fade.factor(105) - 0.5).abs() < 1e-9);
+        assert_eq!(fade.factor(150), 1.0);
+        assert!((fade.factor(195) - 0.5).abs() < 1e-9);
+        assert_eq!(fade.factor(200), 0.0);
+        assert_eq!(fade.factor(250), 0.0);
+
+        let unknown_end = ImageFade {
+            out_frames: 10,
+            end_pts: None,
+            ..fade
+        };
+
+        assert_eq!(unknown_end.factor(10_000), 1.0, "no end, no fade out");
+    }
+
+    #[test]
+    fn a_fading_text_layer_is_invisible_at_the_start_and_gone_at_the_end() {
+        crate::compositor::text::init();
+
+        let state = GraphicLayersState::default();
+        let mut layer = GraphicLayer::new(
+            1,
+            GraphicContent::Text(TextConfig {
+                text: Some("WWWW".to_string()),
+                font_size: 40.0,
+                position_x: TextPosition::Pixels(100),
+                position_y: TextPosition::Pixels(100),
+                ..TextConfig::default()
+            }),
+        );
+
+        layer.fade_in_seconds = 1.0;
+        layer.fade_out_seconds = 1.0;
+        layer.visible_seconds = Some(4.0);
+        state.set(vec![layer]);
+
+        let mut layers = layers_for(&state);
+        let mut bright = |pts: i64| {
+            let mut frame = black_frame();
+
+            layers.blend(&mut frame, pts, pts);
+
+            bright_pixels(&frame, 100, 100, 250, 60)
+        };
+
+        assert_eq!(bright(0), 0, "starts invisible");
+        assert!(
+            bright(50) > 50,
+            "visible in the middle (frame 50 at 25 fps)"
+        );
+        assert_eq!(bright(100), 0, "gone when the time on the air ends");
+    }
+
+    #[test]
+    fn scrolling_text_moves_across_the_picture() {
+        crate::compositor::text::init();
+
+        let state = GraphicLayersState::default();
+
+        state.set(vec![GraphicLayer::new(
+            1,
+            GraphicContent::Text(TextConfig {
+                text: Some("WWWW".to_string()),
+                font_size: 40.0,
+                position_y: TextPosition::Pixels(100),
+                scroll: crate::utils::config::TextScroll::RightToLeft {
+                    pixels_per_second: 250,
+                },
+                ..TextConfig::default()
+            }),
+        )]);
+
+        let mut layers = layers_for(&state);
+        let mut at = |pts: i64| {
+            let mut frame = black_frame();
+
+            layers.blend(&mut frame, pts, pts);
+
+            (
+                bright_pixels(&frame, 0, 100, 320, 60),
+                bright_pixels(&frame, 320, 100, 320, 60),
+            )
+        };
+
+        // At 25 fps the text moves 10 px per frame, so frame 20 is 200 px in, starting beyond the right edge.
+        assert_eq!(at(0), (0, 0));
+        let (left, right) = at(20);
+
+        assert!(
+            right > 0 && left == 0,
+            "enters from the right: {left} {right}"
+        );
+        let (left, _) = at(60);
+
+        assert!(left > 0, "crosses to the left half");
     }
 }

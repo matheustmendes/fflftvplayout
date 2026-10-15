@@ -145,6 +145,19 @@ async fn invalid_graphics_are_refused_with_a_reason() {
             json!({ "kind": "image", "image_path": "../secret.png" }),
             "storage",
         ),
+        (
+            json!({ "kind": "image", "image_path": "selo.png", "scroll": "right_to_left" }),
+            "only a text can slide",
+        ),
+        (json!({ "scroll_speed_pct": 0 }), "sliding speed"),
+        (json!({ "fade_out_seconds": 99 }), "fade-out"),
+        (
+            json!({ "schedules": [{
+                "mode": "clock", "start_time": "18:00", "duration_seconds": 60,
+                "repeat_every_seconds": 60
+            }] }),
+            "longer than the time on the air",
+        ),
     ] {
         let mut body = text_graphic();
 

@@ -31,7 +31,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     db::{
         handles::{self, CampaignWindow},
-        models::{AirResult, Cg, CgKind, CgMode, CgSchedule, CgWithSchedules},
+        models::{AirResult, Cg, CgKind, CgMode, CgSchedule, CgScroll, CgWithSchedules},
     },
     player::controller::{ChannelController, ChannelManager},
     utils::{
@@ -78,27 +78,25 @@ fn seconds_of_day(time: chrono::NaiveTime) -> i64 {
     i64::from(time.num_seconds_from_midnight())
 }
 
-/// Whether a clock rule that started on `date` is on the air `seconds` after
-/// that day began. `seconds` may pass 24 h for a window that crosses midnight.
-fn clock_active_on(schedule: &CgSchedule, date: NaiveDate, seconds: i64) -> bool {
+/// Seconds left of a clock rule that started on `date`, `seconds` after that
+/// day began, or `None` when the rule is not on the air. `seconds` may pass 24 h
+/// for a window that crosses midnight.
+fn clock_remaining_on(schedule: &CgSchedule, date: NaiveDate, seconds: i64) -> Option<i64> {
     if !day_matches(schedule, date) {
-        return false;
+        return None;
     }
 
-    let Ok(start) = schedule.start() else {
-        return false;
-    };
-    let start = seconds_of_day(start);
+    let start = seconds_of_day(schedule.start().ok()?);
 
     if seconds < start {
-        return false;
+        return None;
     }
 
     let elapsed = seconds - start;
     let duration = i64::from(schedule.duration_seconds);
 
     let Some(repeat) = schedule.repeat_every_seconds.map(i64::from) else {
-        return elapsed < duration;
+        return (elapsed < duration).then(|| duration - elapsed);
     };
 
     let until = schedule
@@ -113,40 +111,57 @@ fn clock_active_on(schedule: &CgSchedule, date: NaiveDate, seconds: i64) -> bool
     let cycle = elapsed / repeat;
 
     // The last repetition is the last one that begins before the end time.
-    start + cycle * repeat <= until && elapsed % repeat < duration
+    (start + cycle * repeat <= until && elapsed % repeat < duration)
+        .then(|| duration - elapsed % repeat)
 }
 
-/// A rule that fires at a time of the day, in the channel clock.
-pub fn clock_active(schedule: &CgSchedule, local: NaiveDateTime) -> bool {
+/// Seconds left of a rule that fires at a time of the day, in the channel clock.
+pub fn clock_remaining(schedule: &CgSchedule, local: NaiveDateTime) -> Option<i64> {
     let seconds = seconds_of_day(local.time());
 
-    clock_active_on(schedule, local.date(), seconds)
-        || local.date().pred_opt().is_some_and(|yesterday| {
-            clock_active_on(schedule, yesterday, seconds + SECONDS_PER_DAY)
+    clock_remaining_on(schedule, local.date(), seconds).or_else(|| {
+        local.date().pred_opt().and_then(|yesterday| {
+            clock_remaining_on(schedule, yesterday, seconds + SECONDS_PER_DAY)
         })
+    })
 }
 
-/// A rule that fires after a program started. Spots never start a program.
+pub fn clock_active(schedule: &CgSchedule, local: NaiveDateTime) -> bool {
+    clock_remaining(schedule, local).is_some()
+}
+
+/// Seconds left of a rule that fires after a program started. Spots never
+/// start a program.
+pub fn program_remaining(
+    schedule: &CgSchedule,
+    title: &str,
+    started: NaiveDateTime,
+    now: NaiveDateTime,
+) -> Option<i64> {
+    if !day_matches(schedule, started.date()) {
+        return None;
+    }
+
+    let wanted = schedule.program_match.trim().to_lowercase();
+
+    if !wanted.is_empty() && !title.to_lowercase().contains(&wanted) {
+        return None;
+    }
+
+    let elapsed = (now - started).num_seconds();
+    let offset = i64::from(schedule.offset_seconds);
+    let end = offset + i64::from(schedule.duration_seconds);
+
+    (elapsed >= offset && elapsed < end).then(|| end - elapsed)
+}
+
 pub fn program_active(
     schedule: &CgSchedule,
     title: &str,
     started: NaiveDateTime,
     now: NaiveDateTime,
 ) -> bool {
-    if !day_matches(schedule, started.date()) {
-        return false;
-    }
-
-    let wanted = schedule.program_match.trim().to_lowercase();
-
-    if !wanted.is_empty() && !title.to_lowercase().contains(&wanted) {
-        return false;
-    }
-
-    let elapsed = (now - started).num_seconds();
-    let offset = i64::from(schedule.offset_seconds);
-
-    elapsed >= offset && elapsed < offset + i64::from(schedule.duration_seconds)
+    program_remaining(schedule, title, started, now).is_some()
 }
 
 /// The program on the air, as far as the graphics are concerned.
@@ -156,23 +171,35 @@ pub struct ProgramOnAir {
     pub started: NaiveDateTime,
 }
 
+/// Seconds the graphic stays on the air if a rule puts it there now (the
+/// longest of the rules that do), or `None`.
+pub fn scheduled_remaining(
+    item: &CgWithSchedules,
+    now: NaiveDateTime,
+    program: Option<&ProgramOnAir>,
+) -> Option<i64> {
+    if !item.cg.enabled {
+        return None;
+    }
+
+    item.schedules
+        .iter()
+        .filter(|rule| rule.enabled)
+        .filter_map(|rule| match rule.mode {
+            CgMode::Clock => clock_remaining(rule, now),
+            CgMode::Program => program
+                .and_then(|program| program_remaining(rule, &program.title, program.started, now)),
+        })
+        .max()
+}
+
 /// Whether any rule of a graphic puts it on the air now.
 pub fn scheduled_now(
     item: &CgWithSchedules,
     now: NaiveDateTime,
     program: Option<&ProgramOnAir>,
 ) -> bool {
-    item.cg.enabled
-        && item
-            .schedules
-            .iter()
-            .filter(|rule| rule.enabled)
-            .any(|rule| match rule.mode {
-                CgMode::Clock => clock_active(rule, now),
-                CgMode::Program => program.is_some_and(|program| {
-                    program_active(rule, &program.title, program.started, now)
-                }),
-            })
+    scheduled_remaining(item, now, program).is_some()
 }
 
 fn relative_image_path(path: &str) -> Result<&Path, String> {
@@ -194,6 +221,7 @@ pub fn build_layer(
     width: u32,
     height: u32,
     storage_root: &Path,
+    visible_seconds: Option<f64>,
 ) -> Result<GraphicLayer, String> {
     let left = (cg.x_pct / 100.0 * f64::from(width)).round() as i32;
     let top = (cg.y_pct / 100.0 * f64::from(height)).round() as i32;
@@ -201,6 +229,9 @@ pub fn build_layer(
     let content = match cg.kind {
         CgKind::Text => {
             let font_size = (cg.size_pct / 100.0 * f64::from(height)).max(8.0) as f32;
+            let scroll_pixels = (cg.scroll_speed_pct / 100.0 * f64::from(width))
+                .round()
+                .max(1.0) as u32;
             let background = cg.box_enabled.then(|| {
                 let mut color = parse_color(&cg.box_color, RgbaColor::opaque(0, 0, 0));
 
@@ -226,8 +257,15 @@ pub fn build_layer(
                 position_x: TextPosition::Pixels(left),
                 position_y: TextPosition::Pixels(top),
                 background,
-                scroll: TextScroll::None,
-                fade_in_seconds: cg.fade_in_seconds,
+                scroll: match cg.scroll {
+                    CgScroll::None => TextScroll::None,
+                    CgScroll::RightToLeft => TextScroll::RightToLeft {
+                        pixels_per_second: scroll_pixels,
+                    },
+                    CgScroll::LeftToRight => TextScroll::LeftToRight {
+                        pixels_per_second: scroll_pixels,
+                    },
+                },
                 ..TextConfig::default()
             })
         }
@@ -252,6 +290,9 @@ pub fn build_layer(
     Ok(GraphicLayer {
         id: i64::from(cg.id),
         content,
+        fade_in_seconds: cg.fade_in_seconds,
+        fade_out_seconds: cg.fade_out_seconds,
+        visible_seconds,
     })
 }
 
@@ -261,7 +302,7 @@ pub fn check_cg(item: &CgWithSchedules, storage_root: &Path) -> Result<(), Servi
     item.validate().map_err(ServiceError::BadRequest)?;
 
     if item.cg.kind == CgKind::Image {
-        build_layer(&item.cg, 1920, 1080, storage_root).map_err(ServiceError::BadRequest)?;
+        build_layer(&item.cg, 1920, 1080, storage_root, None).map_err(ServiceError::BadRequest)?;
     }
 
     Ok(())
@@ -291,40 +332,56 @@ pub fn active_layers(
     items: &[CgWithSchedules],
     now: NaiveDateTime,
     program: Option<&ProgramOnAir>,
-    forced: &HashSet<i32>,
+    forced: &HashMap<i32, i64>,
     campaigns: &HashMap<i32, CampaignWindow>,
     config: &PlayoutConfig,
-    warned: &mut HashSet<i32>,
+    memory: &mut LayerMemory,
 ) -> Vec<GraphicLayer> {
     let mut layers = Vec::new();
+    let mut wanted_ids = HashSet::new();
 
     for item in items {
-        let wanted = forced.contains(&item.cg.id)
-            || (scheduled_now(item, now, program)
-                && campaign_allows(&item.cg, now.date(), campaigns));
-
-        if !wanted {
+        let scheduled = scheduled_remaining(item, now, program)
+            .filter(|_| campaign_allows(&item.cg, now.date(), campaigns));
+        let Some(remaining) = forced.get(&item.cg.id).copied().max(scheduled) else {
             continue;
-        }
+        };
+
+        wanted_ids.insert(item.cg.id);
+
+        // The engine fades out toward the end it was told when the graphic
+        // appeared. Telling it again every second would reload the layer.
+        let visible_seconds = *memory.visible.entry(item.cg.id).or_insert(remaining as f64);
 
         match build_layer(
             &item.cg,
             config.output.width,
             config.output.height,
             &config.storage.path,
+            Some(visible_seconds),
         ) {
             Ok(layer) => layers.push(layer),
             Err(error) => {
-                if warned.insert(item.cg.id) {
+                if memory.warned.insert(item.cg.id) {
                     warn!(channel = config.general.channel_id; "Graphic '{}' not shown: {error}", item.cg.name);
                 }
             }
         }
     }
 
+    memory.visible.retain(|id, _| wanted_ids.contains(id));
     layers.sort_by_key(|layer| layer.id);
 
     layers
+}
+
+/// What the scheduler remembers between two ticks to keep the layers stable.
+#[derive(Default)]
+pub struct LayerMemory {
+    /// Seconds each graphic on the air was told it would stay.
+    visible: HashMap<i32, f64>,
+    /// Graphics already reported as impossible to draw.
+    warned: HashSet<i32>,
 }
 
 #[derive(Default)]
@@ -333,7 +390,7 @@ struct ChannelCg {
     loaded: Option<Instant>,
     program: Option<ProgramOnAir>,
     program_key: Option<(String, u64)>,
-    warned: HashSet<i32>,
+    memory: LayerMemory,
     campaigns: HashMap<i32, CampaignWindow>,
     /// Graphics on the screen now: the airing log row, the name and the start.
     on_screen: HashMap<i32, OnScreen>,
@@ -365,7 +422,7 @@ impl ChannelCg {
             Ok(items) => {
                 let ids: HashSet<i32> = items.iter().map(|item| item.cg.id).collect();
 
-                self.warned.retain(|id| ids.contains(id));
+                self.memory.warned.retain(|id| ids.contains(id));
                 self.items = items;
             }
             Err(error) => error!(channel = channel; "Cannot read the graphics: {error}"),
@@ -493,7 +550,7 @@ impl ChannelCg {
 }
 
 /// Graphics the operator asked to show right now, until the stored time.
-pub fn forced_ids(manager: &ChannelManager, now: DateTime<Utc>) -> HashSet<i32> {
+pub fn forced_ids(manager: &ChannelManager, now: DateTime<Utc>) -> HashMap<i32, i64> {
     let mut manual = manager
         .cg_manual
         .lock()
@@ -501,7 +558,10 @@ pub fn forced_ids(manager: &ChannelManager, now: DateTime<Utc>) -> HashSet<i32> 
 
     manual.retain(|_, until| *until > now);
 
-    manual.keys().copied().collect()
+    manual
+        .iter()
+        .map(|(id, until)| (*id, (*until - now).num_seconds().max(1)))
+        .collect()
 }
 
 pub fn show_now(manager: &ChannelManager, cg_id: i32, seconds: i64, now: DateTime<Utc>) {
@@ -561,7 +621,7 @@ pub async fn run_cg_scheduler(
                     &forced,
                     &state.campaigns,
                     &config,
-                    &mut state.warned,
+                    &mut state.memory,
                 )
             } else {
                 Vec::new()
@@ -623,6 +683,9 @@ mod tests {
             box_opacity: 0.5,
             opacity: 1.0,
             fade_in_seconds: 0.0,
+            fade_out_seconds: 0.0,
+            scroll: CgScroll::None,
+            scroll_speed_pct: 10.0,
             enabled: true,
         }
     }
@@ -746,7 +809,7 @@ mod tests {
         let cg = graphic(CgKind::Text);
 
         for (width, height) in [(1920_u32, 1080_u32), (1280, 720)] {
-            let layer = build_layer(&cg, width, height, Path::new("/tmp")).unwrap();
+            let layer = build_layer(&cg, width, height, Path::new("/tmp"), None).unwrap();
             let GraphicContent::Text(text) = layer.content else {
                 panic!("a text graphic must build a text layer");
             };
@@ -771,14 +834,14 @@ mod tests {
         for path in ["../x.png", "/etc/passwd", ""] {
             cg.image_path = path.to_string();
             assert!(
-                build_layer(&cg, 1920, 1080, Path::new("/tmp")).is_err(),
+                build_layer(&cg, 1920, 1080, Path::new("/tmp"), None).is_err(),
                 "{path}"
             );
         }
 
         cg.image_path = "missing-file.png".to_string();
         assert!(
-            build_layer(&cg, 1920, 1080, Path::new("/tmp"))
+            build_layer(&cg, 1920, 1080, Path::new("/tmp"), None)
                 .unwrap_err()
                 .contains("not found")
         );
@@ -831,5 +894,121 @@ mod tests {
         assert!(campaign_allows(&cg, day("2030-01-01"), &campaigns));
         cg.campaign_id = Some(99);
         assert!(campaign_allows(&cg, day("2030-01-01"), &campaigns));
+    }
+
+    #[test]
+    fn the_seconds_left_count_down_to_the_end_of_the_window() {
+        let rule = clock("18:00:00", 15);
+
+        assert_eq!(
+            clock_remaining(&rule, at("2026-10-12", "18:00:00")),
+            Some(15)
+        );
+        assert_eq!(
+            clock_remaining(&rule, at("2026-10-12", "18:00:10")),
+            Some(5)
+        );
+        assert_eq!(clock_remaining(&rule, at("2026-10-12", "18:00:15")), None);
+
+        let mut repeating = clock("18:00", 10);
+
+        repeating.repeat_every_seconds = Some(1800);
+        assert_eq!(
+            clock_remaining(&repeating, at("2026-10-12", "18:30:04")),
+            Some(6)
+        );
+
+        let mut program = clock("00:00", 20);
+
+        program.mode = CgMode::Program;
+        program.offset_seconds = 5;
+
+        let started = at("2026-10-12", "19:00:00");
+
+        assert_eq!(
+            program_remaining(&program, "x", started, at("2026-10-12", "19:00:05")),
+            Some(20)
+        );
+        assert_eq!(
+            program_remaining(&program, "x", started, at("2026-10-12", "19:00:20")),
+            Some(5)
+        );
+    }
+
+    #[test]
+    fn the_longest_rule_decides_how_long_a_graphic_stays() {
+        let item = CgWithSchedules {
+            cg: graphic(CgKind::Text),
+            schedules: vec![clock("18:00:00", 10), clock("18:00:00", 30)],
+        };
+
+        assert_eq!(
+            scheduled_remaining(&item, at("2026-10-12", "18:00:05"), None),
+            Some(25)
+        );
+    }
+
+    #[test]
+    fn fades_and_sliding_text_reach_the_engine_layer() {
+        let mut cg = graphic(CgKind::Text);
+
+        cg.fade_in_seconds = 0.5;
+        cg.fade_out_seconds = 1.5;
+        cg.scroll = CgScroll::RightToLeft;
+        cg.scroll_speed_pct = 10.0;
+
+        let layer = build_layer(&cg, 1920, 1080, Path::new("/tmp"), Some(12.0)).unwrap();
+        let GraphicContent::Text(text) = &layer.content else {
+            panic!("a text graphic must build a text layer");
+        };
+
+        assert_eq!(layer.fade_in_seconds, 0.5);
+        assert_eq!(layer.fade_out_seconds, 1.5);
+        assert_eq!(layer.visible_seconds, Some(12.0));
+        assert_eq!(
+            text.scroll,
+            TextScroll::RightToLeft {
+                pixels_per_second: 192
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_graphic_on_the_air_keeps_the_same_layer_while_the_time_runs_down() {
+        let (manager, _) = crate::test_support::channel_manager().await;
+        let config = manager.config.read().await.clone();
+        let item = CgWithSchedules {
+            cg: graphic(CgKind::Text),
+            schedules: vec![clock("18:00:00", 30)],
+        };
+        let items = [item];
+        let mut memory = LayerMemory::default();
+        let mut layers_at = |time: &str| {
+            active_layers(
+                &items,
+                at("2026-10-12", time),
+                None,
+                &HashMap::new(),
+                &HashMap::new(),
+                &config,
+                &mut memory,
+            )
+        };
+
+        let first = layers_at("18:00:00");
+        let later = layers_at("18:00:20");
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].visible_seconds, Some(30.0));
+        assert_eq!(
+            first, later,
+            "the engine must not reload the layer every second"
+        );
+        assert!(layers_at("18:00:31").is_empty());
+
+        // The next appearance starts a new count.
+        let again = layers_at("18:00:40");
+
+        assert!(again.is_empty());
     }
 }

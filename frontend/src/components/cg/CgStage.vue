@@ -18,10 +18,17 @@ const imageUrl = ref('')
 const dragging = ref<{ pointer: number; x: number; y: number; startX: number; startY: number } | null>(null)
 
 const round = (value: number) => Math.round(value * 10) / 10
+
+/** A sliding text crosses the whole picture, so only its height is chosen. */
+const sliding = computed(() => props.cg.kind === 'text' && props.cg.scroll !== 'none')
 const clamp = (value: number) => Math.min(100, Math.max(0, value))
 
 const itemStyle = computed(() => {
-    const base = { left: `${props.cg.x_pct}%`, top: `${props.cg.y_pct}%`, opacity: props.cg.opacity }
+    const base = {
+        left: sliding.value ? '0' : `${props.cg.x_pct}%`,
+        top: `${props.cg.y_pct}%`,
+        opacity: props.cg.opacity,
+    }
 
     if (props.cg.kind === 'image') {
         return { ...base, width: `${props.cg.size_pct}%` }
@@ -37,6 +44,11 @@ const itemStyle = computed(() => {
         fontWeight: props.cg.font_weight === 'normal' ? 400 : props.cg.font_weight === 'semibold' ? 600 : 700,
         color: props.cg.text_color,
         fontFamily: props.cg.font_family || undefined,
+        animation: sliding.value
+            ? `${props.cg.scroll === 'right_to_left' ? 'cg-slide-left' : 'cg-slide-right'} ${
+                  100 / props.cg.scroll_speed_pct + 1
+              }s linear infinite`
+            : undefined,
         padding: props.cg.box_enabled ? '0.3em' : '0',
         background: props.cg.box_enabled ? `rgba(${rgb.join(',')},${props.cg.box_opacity})` : 'transparent',
     }
@@ -83,7 +95,7 @@ function onMove(event: PointerEvent) {
 
     emit(
         'move',
-        round(clamp(drag.startX + ((event.clientX - drag.x) / rect.width) * 100)),
+        sliding.value ? props.cg.x_pct : round(clamp(drag.startX + ((event.clientX - drag.x) / rect.width) * 100)),
         round(clamp(drag.startY + ((event.clientY - drag.y) / rect.height) * 100)),
     )
 }
@@ -104,7 +116,13 @@ function place(horizontal: 'left' | 'center' | 'right', vertical: 'top' | 'middl
     const width = (box.width / rect.width) * 100
     const height = (box.height / rect.height) * 100
     const margin = 4
-    const x = horizontal === 'left' ? margin : horizontal === 'center' ? (100 - width) / 2 : 100 - width - margin
+    const x = sliding.value
+        ? props.cg.x_pct
+        : horizontal === 'left'
+          ? margin
+          : horizontal === 'center'
+            ? (100 - width) / 2
+            : 100 - width - margin
     const y = vertical === 'top' ? margin : vertical === 'middle' ? (100 - height) / 2 : 100 - height - margin
 
     emit('move', round(clamp(x)), round(clamp(y)))
@@ -158,3 +176,23 @@ const verticals = ['top', 'middle', 'bottom'] as const
         </div>
     </div>
 </template>
+
+<style scoped>
+@keyframes cg-slide-left {
+    from {
+        transform: translateX(100cqw);
+    }
+    to {
+        transform: translateX(-100%);
+    }
+}
+
+@keyframes cg-slide-right {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(100cqw);
+    }
+}
+</style>

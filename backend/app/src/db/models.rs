@@ -1260,6 +1260,19 @@ pub enum CgKind {
     Image,
 }
 
+/// How a text moves over the picture.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, Eq, PartialEq, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(type_name = "TEXT", rename_all = "snake_case")]
+pub enum CgScroll {
+    /// Stays where it is.
+    #[default]
+    None,
+    /// Slides from the right edge to the left one, like a news ticker.
+    RightToLeft,
+    LeftToRight,
+}
+
 /// A text or an image placed at an exact spot of the picture.
 #[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow)]
 pub struct Cg {
@@ -1307,8 +1320,21 @@ pub struct Cg {
     pub opacity: f64,
     #[serde(default)]
     pub fade_in_seconds: f64,
+    #[serde(default)]
+    pub fade_out_seconds: f64,
+    /// Text only. A sliding text ignores `x_pct`: it crosses the whole picture
+    /// at the height given by `y_pct`.
+    #[serde(default)]
+    pub scroll: CgScroll,
+    /// Percent of the picture width the text slides per second.
+    #[serde(default = "default_cg_scroll_speed")]
+    pub scroll_speed_pct: f64,
     #[serde(default = "active_by_default")]
     pub enabled: bool,
+}
+
+const fn default_cg_scroll_speed() -> f64 {
+    10.0
 }
 
 const fn default_cg_position() -> f64 {
@@ -1400,6 +1426,24 @@ impl Cg {
             return Err(format!(
                 "the fade-in must be between 0 and {MAX_CG_FADE_SECONDS} seconds"
             ));
+        }
+
+        if !self.fade_out_seconds.is_finite()
+            || !(0.0..=MAX_CG_FADE_SECONDS).contains(&self.fade_out_seconds)
+        {
+            return Err(format!(
+                "the fade-out must be between 0 and {MAX_CG_FADE_SECONDS} seconds"
+            ));
+        }
+
+        if !self.scroll_speed_pct.is_finite() || !(1.0..=100.0).contains(&self.scroll_speed_pct) {
+            return Err(
+                "the sliding speed must be between 1 and 100 percent per second".to_string(),
+            );
+        }
+
+        if self.kind == CgKind::Image && self.scroll != CgScroll::None {
+            return Err("only a text can slide".to_string());
         }
 
         Ok(())
@@ -1509,9 +1553,9 @@ impl CgSchedule {
             self.start()?;
 
             if let Some(repeat) = self.repeat_every_seconds {
-                if repeat < self.duration_seconds {
+                if repeat <= self.duration_seconds {
                     return Err(
-                        "the interval between repetitions must not be shorter than the time on the air"
+                        "the interval between repetitions must be longer than the time on the air"
                             .to_string(),
                     );
                 }

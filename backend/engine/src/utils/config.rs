@@ -1368,6 +1368,25 @@ pub enum GraphicContent {
 pub struct GraphicLayer {
     pub id: i64,
     pub content: GraphicContent,
+    pub fade_in_seconds: f64,
+    pub fade_out_seconds: f64,
+    /// How long the layer is going to stay on the air, counted from the moment
+    /// the engine first draws it. The fade out ends there. `None`: unknown, so
+    /// the layer only fades in.
+    pub visible_seconds: Option<f64>,
+}
+
+impl GraphicLayer {
+    /// A layer that appears and disappears at once.
+    pub fn new(id: i64, content: GraphicContent) -> Self {
+        Self {
+            id,
+            content,
+            fade_in_seconds: 0.0,
+            fade_out_seconds: 0.0,
+            visible_seconds: None,
+        }
+    }
 }
 
 /// Set of graphic layers drawn above the video, in order (last on top).
@@ -1924,13 +1943,13 @@ mod graphic_layers_tests {
     use super::*;
 
     fn layer(id: i64, text: &str) -> GraphicLayer {
-        GraphicLayer {
+        GraphicLayer::new(
             id,
-            content: GraphicContent::Text(TextConfig {
+            GraphicContent::Text(TextConfig {
                 text: Some(text.to_string()),
                 ..TextConfig::default()
             }),
-        }
+        )
     }
 
     #[test]

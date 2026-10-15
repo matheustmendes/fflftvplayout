@@ -81,7 +81,10 @@ numéricos) e quando. A imagem é escolhida entre os arquivos do canal.
 
 - A tela de teste usa CSS: o tamanho da letra é muito parecido, mas a fonte e a
   quebra de linha reais são as do servidor. **Conferir no ar** (roteiro F5).
-- O texto não rola (sem rodapé deslizante) e não há saída suave (só entrada).
+- Texto deslizante (rodapé) atravessa a tela inteira na altura escolhida; a posição
+  horizontal não vale. A velocidade é em % da largura por segundo.
+- A saída suave termina junto com o fim do horário (o motor é avisado de quantos
+  segundos o gráfico ficará no ar quando ele aparece). "Tirar do ar" corta de uma vez.
 - "Depois que um programa começa" conta a partir do momento em que o agendador
   percebe a troca (até 1 s de diferença); se o ffplayout reiniciar no meio do
   programa, a contagem recomeça dali.

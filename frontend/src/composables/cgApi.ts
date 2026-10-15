@@ -5,6 +5,7 @@ const JSON_HEADERS = { 'content-type': 'application/json;charset=UTF-8' }
 
 export type CgKind = 'text' | 'image'
 export type CgMode = 'clock' | 'program'
+export type CgScroll = 'none' | 'right_to_left' | 'left_to_right'
 
 export interface CgRule {
     id?: number
@@ -40,6 +41,9 @@ export interface Cg {
     box_opacity: number
     opacity: number
     fade_in_seconds: number
+    fade_out_seconds: number
+    scroll: CgScroll
+    scroll_speed_pct: number
     enabled: boolean
     schedules: CgRule[]
 }
@@ -86,6 +90,9 @@ export function newCg(): Cg {
         box_opacity: 0.6,
         opacity: 1,
         fade_in_seconds: 0.5,
+        fade_out_seconds: 0.5,
+        scroll: 'none',
+        scroll_speed_pct: 10,
         enabled: true,
         schedules: [newRule()],
     }

@@ -61,6 +61,10 @@ function setKind(kind: Cg['kind']) {
     }
 
     draft.value.kind = kind
+
+    if (kind === 'image') {
+        draft.value.scroll = 'none'
+    }
 }
 
 const dayBit = (day: number) => 1 << (day - 1)
@@ -271,6 +275,30 @@ function submit() {
 
                         <label class="form-control">
                             <span class="label-text mb-1">
+                                {{ t('cg.editor.scroll') }} <HelpTip :text="t('cg.editor.scrollHelp')" />
+                            </span>
+                            <select v-model="draft.scroll" class="select select-sm w-full">
+                                <option value="none">{{ t('cg.editor.scrollNone') }}</option>
+                                <option value="right_to_left">{{ t('cg.editor.scrollLeft') }}</option>
+                                <option value="left_to_right">{{ t('cg.editor.scrollRight') }}</option>
+                            </select>
+                        </label>
+                        <label v-if="draft.scroll !== 'none'" class="form-control">
+                            <span class="label-text mb-1">
+                                {{ t('cg.editor.scrollSpeed') }}: {{ draft.scroll_speed_pct }}%
+                            </span>
+                            <input
+                                v-model.number="draft.scroll_speed_pct"
+                                type="range"
+                                min="2"
+                                max="40"
+                                step="1"
+                                class="range range-sm range-accent"
+                            />
+                        </label>
+
+                        <label class="form-control">
+                            <span class="label-text mb-1">
                                 {{ t('cg.editor.font') }} <HelpTip :text="t('cg.editor.fontHelp')" />
                             </span>
                             <input v-model="draft.font_family" class="input input-sm w-full" maxlength="80" />
@@ -296,6 +324,20 @@ function submit() {
                         </span>
                         <input
                             v-model.number="draft.fade_in_seconds"
+                            type="number"
+                            min="0"
+                            max="10"
+                            step="0.5"
+                            class="input input-sm w-32"
+                        />
+                    </label>
+
+                    <label class="form-control">
+                        <span class="label-text mb-1">
+                            {{ t('cg.editor.fadeOut') }} <HelpTip :text="t('cg.editor.fadeOutHelp')" />
+                        </span>
+                        <input
+                            v-model.number="draft.fade_out_seconds"
                             type="number"
                             min="0"
                             max="10"
