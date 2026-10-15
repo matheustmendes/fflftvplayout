@@ -556,6 +556,10 @@ async function downloadLog() {
     color: #6e99c7;
 }
 
+:root[data-theme='ffp-light'] .log-decoder {
+    color: #0e7490;
+}
+
 .log-decoder {
     color: #56efff;
 }

@@ -32,9 +32,9 @@
     --my-accent: #f28c1b;
     --my-glow: #c0c0c0;
     --my-purple: #701a75;
-    --my-yellow: #bea203;
+    --my-yellow: #8a6d00;
     --my-blue: #436e9c;
-    --my-green: #68b31e;
+    --my-green: #3f7d0e;
 }
 
 @plugin "daisyui/theme" {

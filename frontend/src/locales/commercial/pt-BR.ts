@@ -15,7 +15,7 @@ export default {
         breaks: 'Intervalos',
         grid: 'Grade',
         reports: 'Relatórios',
-        settings: 'Ajustes',
+        settings: 'Preferências',
     },
     weekday: {
         1: 'Segunda-feira',
@@ -235,6 +235,7 @@ export default {
         total: 'Total',
     },
     auto: {
+        onAir: 'Dia no ar (não muda sozinho)',
         title: 'Montagem automática dos próximos dias',
         help: 'O sistema monta sozinho os próximos dias a partir da grade e das campanhas, sem ninguém apertar nenhum botão.',
         enabled: 'Montar os próximos dias automaticamente',

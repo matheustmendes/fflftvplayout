@@ -24,6 +24,7 @@ dayjs.extend(utc)
 
 import { stringFormatter, playlistOperations } from '@/composables/helper'
 import EmptyState from '@/components/ui/EmptyState.vue'
+import { displayTitle } from '@/composables/displayTitle'
 import { useConfig } from '@/stores/config'
 import { useMedia } from '@/stores/media'
 import { usePlaylist } from '@/stores/playlist'
@@ -327,7 +328,7 @@ function deletePlaylistItem(index: number) {
                             <span v-if="item.ad" class="badge badge-ghost badge-sm shrink-0">
                                 {{ t('player2.col.spot') }}
                             </span>
-                            <span class="truncate">{{ item.title || filename(item.source) }}</span>
+                            <span class="truncate">{{ displayTitle(item.title) || filename(item.source) }}</span>
                             <i
                                 v-if="item.audio"
                                 class="bi-music-note-beamed shrink-0"

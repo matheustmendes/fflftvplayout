@@ -11,6 +11,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import SystemStats from '@/components/SystemStats.vue'
 
 import { authFetch } from '@/composables/authFetch'
+import { displayTitle } from '@/composables/displayTitle'
 import { shortDate, todayInChannel, useCommercialApi } from '@/composables/commercialApi'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
@@ -62,7 +63,10 @@ const next = computed(() => {
     const hours = String(Math.floor(seconds / 3600) % 24).padStart(2, '0')
     const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')
 
-    return { title: item.title || item.source.split('/').pop() || item.source, time: `${hours}:${minutes}` }
+    return {
+        title: displayTitle(item.title) || item.source.split('/').pop() || item.source,
+        time: `${hours}:${minutes}`,
+    }
 })
 
 const spotRows = computed(() => airings.value.filter((row) => row.kind === 'spot'))

@@ -1755,6 +1755,13 @@ async fn automatic_planning_is_configured_run_and_reported() {
     .await;
 
     assert_eq!(after["settings"]["horizon_days"], 2);
+    assert!(
+        after["active_date"]
+            .as_str()
+            .is_some_and(|date| date.len() == 10),
+        "the status says which day is on the air: {after}"
+    );
+    assert_eq!(after["days"][0]["plan_date"], after["active_date"]);
     assert_eq!(after["days"].as_array().unwrap().len(), 3);
 
     let (_, _) = send(

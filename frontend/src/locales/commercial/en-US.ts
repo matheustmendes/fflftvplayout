@@ -15,7 +15,7 @@ export default {
         breaks: 'Breaks',
         grid: 'Schedule',
         reports: 'Reports',
-        settings: 'Settings',
+        settings: 'Preferences',
     },
     weekday: {
         1: 'Monday',
@@ -232,6 +232,7 @@ export default {
         total: 'Total',
     },
     auto: {
+        onAir: 'Day on the air (never changed automatically)',
         title: 'Automatic planning of the upcoming days',
         help: 'The system plans the upcoming days by itself from the schedule and the campaigns, without anybody pressing a button.',
         enabled: 'Plan the upcoming days automatically',

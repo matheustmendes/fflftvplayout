@@ -6,6 +6,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
 import type { StatusKind } from '@/components/ui/StatusPill.vue'
 
+import { displayTitle } from '@/composables/displayTitle'
 import { friendlyError } from '@/composables/friendlyError'
 import { authFetch } from '@/composables/authFetch'
 import { formatDuration } from '@/composables/commercialApi'
@@ -50,7 +51,7 @@ const title = computed(() => {
         return ''
     }
 
-    return media.title || media.source.split('/').pop() || t('dash.now.filler')
+    return displayTitle(media.title) || media.source.split('/').pop() || t('dash.now.filler')
 })
 
 async function run(action: Action) {

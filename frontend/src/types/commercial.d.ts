@@ -191,6 +191,7 @@ declare global {
 
     interface AutoPlanStatus {
         settings: AutoPlanSettings
+        active_date: string
         days: AutoPlanDay[]
     }
 

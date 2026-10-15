@@ -219,4 +219,5 @@ export default {
         other: 'Não foi possível concluir.',
         network: 'Sem conexão com o servidor. Verifique a internet.',
     },
+    plannerTitles: { breakFiller: 'Enchimento do intervalo', dayFiller: 'Enchimento até o fim do dia' },
 }
