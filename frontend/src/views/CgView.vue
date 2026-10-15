@@ -11,7 +11,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
 
 import { friendlyError } from '@/composables/friendlyError'
-import { shortDate } from '@/composables/commercialApi'
+import { shortDate, useCommercialApi } from '@/composables/commercialApi'
 import { ALL_DAYS, WORK_DAYS, newCg, shortClock, useCgApi, type Cg, type CgRule } from '@/composables/cgApi'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
@@ -36,6 +36,7 @@ const editing = ref<Cg | null>(null)
 const saving = ref(false)
 const removing = ref<Cg | null>(null)
 const showSeconds = ref(15)
+const campaigns = ref<Record<number, string>>({})
 
 const canManage = computed(() => authStore.role !== 'user')
 
@@ -48,6 +49,12 @@ function fail(error: unknown) {
 async function load() {
     try {
         const overview = await api.overview()
+
+        if (overview.items.some((item) => item.campaign_id !== null)) {
+            const all = await useCommercialApi().campaigns(true)
+
+            campaigns.value = Object.fromEntries(all.map((campaign) => [campaign.id, campaign.name]))
+        }
 
         items.value = overview.items
         onAir.value = overview.on_air
@@ -252,6 +259,10 @@ watch(() => configStore.i, load)
                             </div>
                             <p class="text-sm opacity-70 truncate">
                                 {{ item.kind === 'text' ? item.text : item.image_path }}
+                            </p>
+                            <p v-if="item.campaign_id !== null" class="text-sm">
+                                <i class="bi bi-megaphone me-1 opacity-60" />
+                                {{ t('cg.campaignOf', { name: campaigns[item.campaign_id] ?? item.campaign_id }) }}
                             </p>
                             <ul class="mt-2 space-y-1 text-sm">
                                 <li v-if="!item.schedules.length" class="opacity-60">{{ t('cg.noRules') }}</li>

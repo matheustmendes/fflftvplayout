@@ -263,3 +263,53 @@ async fn an_image_graphic_is_saved_edited_and_deleted() {
 
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+#[serial]
+async fn a_graphic_can_belong_to_a_campaign_of_the_channel_only() {
+    let fixture = cg_fixture().await;
+    let admin = access_token(&fixture.state, CHANNEL_ADMIN_ID).await;
+
+    let (status, advertiser) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/advertisers",
+        Some(&admin),
+        json!({ "name": "Padaria Central" }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{advertiser}");
+
+    let (status, campaign) = send(
+        &fixture,
+        "POST",
+        "/api/commercials/1/campaigns",
+        Some(&admin),
+        json!({
+            "advertiser_id": advertiser["id"],
+            "name": "Natal",
+            "start_date": "2026-12-01",
+            "end_date": "2026-12-24",
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::CREATED, "{campaign}");
+
+    let mut body = text_graphic();
+
+    body["campaign_id"] = campaign["id"].clone();
+
+    let (status, saved) = send(&fixture, "POST", "/api/cg/1", Some(&admin), body.clone()).await;
+
+    assert_eq!(status, StatusCode::CREATED, "{saved}");
+    assert_eq!(saved["campaign_id"], campaign["id"]);
+
+    body["campaign_id"] = json!(9999);
+
+    let (status, answer) = send(&fixture, "POST", "/api/cg/1", Some(&admin), body).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{answer}");
+    assert!(answer.to_string().contains("campaign"));
+}

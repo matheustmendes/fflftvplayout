@@ -216,6 +216,8 @@ export default {
         add: 'Adicionar ({count})',
     },
     reports: {
+        graphics:
+            'Gráficos na tela: {count} aparição ({time} no ar) | Gráficos na tela: {count} aparições ({time} no ar). A lista completa vai no PDF e na planilha.',
         help: 'Escolha o anunciante e o período. Baixe o PDF ou a planilha (CSV) e envie ao anunciante.',
         advertiser: 'Anunciante',
         all: 'Todos',

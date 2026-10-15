@@ -44,6 +44,25 @@ async fn storage_root(state: &AppState, channel: i32) -> Result<std::path::PathB
     Ok(manager.storage.root.read().await.clone())
 }
 
+/// Checks the graphic and that the campaign it advertises is one of the channel.
+async fn check_item(
+    state: &AppState,
+    channel: i32,
+    item: &CgWithSchedules,
+) -> Result<(), ServiceError> {
+    check_cg(item, &storage_root(state, channel).await?)?;
+
+    if let Some(campaign) = item.cg.campaign_id
+        && !handles::campaign_exists(&state.pool, channel, campaign).await?
+    {
+        return Err(ServiceError::BadRequest(format!(
+            "campaign {campaign} not found for channel {channel}"
+        )));
+    }
+
+    Ok(())
+}
+
 /// #### Graphics (CG)
 ///
 /// **List the graphics**
@@ -87,7 +106,7 @@ pub async fn add_cg(
     Json(item): Json<CgWithSchedules>,
 ) -> Result<(StatusCode, Json<CgWithSchedules>), ServiceError> {
     ensure_manager(&user, &details, channel)?;
-    check_cg(&item, &storage_root(&state, channel).await?)?;
+    check_item(&state, channel, &item).await?;
 
     let id = handles::insert_cg(&state.pool, channel, &item).await?;
     let saved = handles::select_cg(&state.pool, channel, id)
@@ -106,7 +125,7 @@ pub async fn edit_cg(
     Json(item): Json<CgWithSchedules>,
 ) -> Result<Json<CgWithSchedules>, ServiceError> {
     ensure_manager(&user, &details, channel)?;
-    check_cg(&item, &storage_root(&state, channel).await?)?;
+    check_item(&state, channel, &item).await?;
 
     if !handles::update_cg(&state.pool, channel, id, &item).await? {
         return Err(not_found("Graphic", id, channel));

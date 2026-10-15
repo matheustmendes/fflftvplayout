@@ -8,6 +8,7 @@ export default {
         'Create a graphic to show a text (like a phone number or a notice) or an image (like a badge) over the programming.',
     emptyReadOnly: 'No graphic was created. Ask an administrator to create one.',
     onAir: 'On air now',
+    campaignOf: 'Campaign: {name}',
     off: 'Off',
     kindText: 'Text',
     kindImage: 'Image',
@@ -37,6 +38,10 @@ export default {
         stepLook: '2. Look',
         stepWhere: '3. Where on the screen',
         stepWhen: '4. When to show',
+        campaign: 'Ad of a campaign (optional)',
+        campaignNone: 'No, it is a station graphic',
+        campaignHelp:
+            'If it belongs to a campaign, the graphic only airs inside its dates, every appearance goes into the advertiser report and the history follows the retention rule of the campaign.',
         name: 'Name (only so you can find it)',
         namePlaceholder: 'E.g.: On-duty phone number',
         kind: 'Type',

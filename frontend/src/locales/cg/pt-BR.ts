@@ -8,6 +8,7 @@ export default {
         'Crie um gráfico para mostrar um texto (como um telefone ou um aviso) ou uma imagem (como um selo) sobre a programação.',
     emptyReadOnly: 'Nenhum gráfico foi criado. Peça a um administrador para criar.',
     onAir: 'No ar agora',
+    campaignOf: 'Campanha: {name}',
     off: 'Desligado',
     kindText: 'Texto',
     kindImage: 'Imagem',
@@ -37,6 +38,10 @@ export default {
         stepLook: '2. Aparência',
         stepWhere: '3. Onde na tela',
         stepWhen: '4. Quando mostrar',
+        campaign: 'Anúncio de uma campanha (opcional)',
+        campaignNone: 'Não, é um gráfico da emissora',
+        campaignHelp:
+            'Se for de uma campanha, o gráfico só aparece dentro das datas dela, cada aparição vai para o relatório do anunciante e o histórico segue a regra de retenção da campanha.',
         name: 'Nome (só para você se achar)',
         namePlaceholder: 'Ex.: Telefone do plantão',
         kind: 'Tipo',

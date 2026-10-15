@@ -15,7 +15,7 @@ use printpdf::{
 
 use crate::utils::{
     errors::ServiceError,
-    report::{DayTotals, Report, ReportLine},
+    report::{DayTotals, GraphicLine, Report, ReportLine},
 };
 
 const PAGE_WIDTH: f32 = 210.0;
@@ -232,6 +232,26 @@ fn detail_row(report: &Report, line: &ReportLine) -> Vec<String> {
     ]
 }
 
+fn graphic_row(report: &Report, line: &GraphicLine) -> Vec<String> {
+    let what = if report.header.advertiser.is_none() {
+        format!("{} / {} / {}", line.advertiser, line.campaign, line.graphic)
+    } else {
+        format!("{} / {}", line.campaign, line.graphic)
+    };
+    let duration = line
+        .duration_sec
+        .map(|seconds| format!("{seconds:.1}").replace('.', ","))
+        .unwrap_or_default();
+
+    vec![
+        brazilian_date(&line.date),
+        line.start_time.clone(),
+        line.end_time.clone(),
+        duration,
+        what,
+    ]
+}
+
 /// Logo size in millimetres once it is scaled to the header.
 fn logo_size(width_px: u32, height_px: u32) -> (f32, f32) {
     let natural_width = width_px as f32 / LOGO_DPI * 25.4;
@@ -432,6 +452,48 @@ fn compose(report: &Report, logo_size_mm: Option<(f32, f32)>) -> Vec<Page> {
             .collect();
 
         layout.table(&detail_columns, &rows, false);
+    }
+
+    if !report.graphics.is_empty() {
+        layout.down(2.0);
+        layout.ensure(ROW_HEIGHT * 5.0);
+        layout.text(MARGIN, 11.0, true, "Gráficos na tela");
+        layout.down(6.0);
+
+        let graphic_columns = [
+            Column {
+                title: "Data",
+                width: 22.0,
+                size: 8.0,
+            },
+            Column {
+                title: "Início",
+                width: 18.0,
+                size: 8.0,
+            },
+            Column {
+                title: "Fim",
+                width: 18.0,
+                size: 8.0,
+            },
+            Column {
+                title: "Dur. (s)",
+                width: 16.0,
+                size: 8.0,
+            },
+            Column {
+                title: "Anunciante / Campanha / Gráfico",
+                width: 106.0,
+                size: 8.0,
+            },
+        ];
+        let rows: Vec<Vec<String>> = report
+            .graphics
+            .iter()
+            .map(|line| graphic_row(report, line))
+            .collect();
+
+        layout.table(&graphic_columns, &rows, false);
     }
 
     layout.down(4.0);
@@ -649,6 +711,7 @@ mod tests {
                 ..totals.clone()
             }],
             totals,
+            graphics: vec![],
             notes: vec!["1 spot(s) ainda não foram exibidos.".to_string()],
         }
     }

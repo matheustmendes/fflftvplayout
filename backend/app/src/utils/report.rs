@@ -66,6 +66,20 @@ pub struct ReportLine {
     pub note: String,
 }
 
+/// One appearance of a graphic (CG) on the screen.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct GraphicLine {
+    pub date: String,
+    /// `HH:MM:SS` in the station timezone.
+    pub start_time: String,
+    pub end_time: String,
+    pub duration_sec: Option<f64>,
+    pub advertiser: String,
+    pub campaign: String,
+    pub graphic: String,
+    pub status: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct DayTotals {
     pub date: String,
@@ -107,6 +121,8 @@ pub struct Report {
     pub lines: Vec<ReportLine>,
     pub days: Vec<DayTotals>,
     pub totals: DayTotals,
+    /// Graphics (CG) of the same advertiser or campaign, in time order.
+    pub graphics: Vec<GraphicLine>,
     /// Remarks the reader should see, such as a period the log may not cover.
     pub notes: Vec<String>,
 }
@@ -194,6 +210,23 @@ pub fn summarize(rows: &[Airing], timezone: Tz) -> (Vec<ReportLine>, Vec<DayTota
     (lines, days.into_values().collect(), totals)
 }
 
+/// The appearances of graphics, from the log rows of kind `cg`.
+pub fn graphic_lines(rows: &[Airing], timezone: Tz) -> Vec<GraphicLine> {
+    rows.iter()
+        .filter(|row| row.kind == AirKind::Cg)
+        .map(|row| GraphicLine {
+            date: row.air_date.clone(),
+            start_time: local_clock(row.actual_start.as_deref(), timezone),
+            end_time: local_clock(row.actual_end.as_deref(), timezone),
+            duration_sec: row.actual_duration_sec,
+            advertiser: row.advertiser_name.clone(),
+            campaign: row.campaign_name.clone(),
+            graphic: row.spot_title.clone(),
+            status: result_label(row.result).to_string(),
+        })
+        .collect()
+}
+
 fn split_details(details: &str) -> Vec<String> {
     details
         .lines()
@@ -273,6 +306,21 @@ pub async fn build_report(
     )
     .await?;
     let (lines, days, totals) = summarize(&rows, timezone);
+    let graphic_rows = handles::select_airings(
+        pool,
+        request.channel_id,
+        &AiringFilter {
+            date_from: Some(request.date_from.format("%Y-%m-%d").to_string()),
+            date_to: Some(request.date_to.format("%Y-%m-%d").to_string()),
+            campaign_id: request.campaign_id,
+            advertiser_id,
+            kind: Some(AirKind::Cg),
+            limit: MAX_REPORT_ROWS,
+            ..AiringFilter::default()
+        },
+    )
+    .await?;
+    let graphics = graphic_lines(&graphic_rows, timezone);
     let today = now.with_timezone(&timezone).date_naive();
     let mut notes = Vec::new();
 
@@ -315,6 +363,7 @@ pub async fn build_report(
         lines,
         days,
         totals,
+        graphics,
         notes,
     })
 }
@@ -372,6 +421,44 @@ pub fn to_csv(report: &Report) -> Vec<u8> {
 
         text.push_str(&fields.join(";"));
         text.push_str("\r\n");
+    }
+
+    if !report.graphics.is_empty() {
+        text.push_str("\r\n");
+        text.push_str(
+            &[
+                "Gráficos",
+                "Data",
+                "Início",
+                "Fim",
+                "Duração (s)",
+                "Anunciante",
+                "Campanha",
+                "Situação",
+            ]
+            .join(";"),
+        );
+        text.push_str("\r\n");
+
+        for line in &report.graphics {
+            let duration = line
+                .duration_sec
+                .map(|seconds| format!("{seconds:.1}").replace('.', ","))
+                .unwrap_or_default();
+            let fields = [
+                csv_field(&line.graphic),
+                csv_field(&line.date),
+                csv_field(&line.start_time),
+                csv_field(&line.end_time),
+                duration,
+                csv_field(&line.advertiser),
+                csv_field(&line.campaign),
+                csv_field(&line.status),
+            ];
+
+            text.push_str(&fields.join(";"));
+            text.push_str("\r\n");
+        }
     }
 
     text.into_bytes()
@@ -533,6 +620,7 @@ mod tests {
             lines,
             days,
             totals,
+            graphics: vec![],
             notes: vec![],
         };
         let bytes = to_csv(&report);
@@ -546,6 +634,85 @@ mod tests {
         assert_eq!(
             rows[1],
             "2026-12-10;12:00:00;12:00:02;29,9;Padaria;Natal;Spot de Natal;Veiculado;"
+        );
+    }
+
+    #[test]
+    fn graphics_are_a_separate_list_and_never_count_as_spots() {
+        let mut graphic = row(2, "2026-12-10", AirResult::Played, None);
+
+        graphic.kind = AirKind::Cg;
+        graphic.spot_title = "QR Natal".to_string();
+        graphic.actual_start = Some("2026-12-10T21:00:00.000Z".to_string());
+        graphic.actual_end = Some("2026-12-10T21:00:15.000Z".to_string());
+        graphic.actual_duration_sec = Some(15.0);
+
+        let rows = [
+            row(
+                1,
+                "2026-12-10",
+                AirResult::Played,
+                Some("2026-12-10T12:00:00.000Z"),
+            ),
+            graphic,
+        ];
+        let saopaulo: Tz = "America/Sao_Paulo".parse().unwrap();
+        let (lines, _, totals) = summarize(&rows, saopaulo);
+        let graphics = graphic_lines(&rows, saopaulo);
+
+        assert_eq!(lines.len(), 1);
+        assert_eq!(totals.aired, 1);
+        assert_eq!(graphics.len(), 1);
+        assert_eq!(graphics[0].graphic, "QR Natal");
+        assert_eq!(graphics[0].start_time, "18:00:00");
+        assert_eq!(graphics[0].end_time, "18:00:15");
+        assert_eq!(graphics[0].status, "Veiculado");
+    }
+
+    #[test]
+    fn the_csv_lists_graphics_after_the_spots() {
+        let mut report = Report {
+            header: ReportHeader {
+                station_name: "TV".to_string(),
+                station_details: vec![],
+                logo_path: String::new(),
+                footer_note: String::new(),
+                advertiser: None,
+                campaign: None,
+                date_from: "2026-12-10".to_string(),
+                date_to: "2026-12-10".to_string(),
+                issued_at: String::new(),
+                timezone: "UTC".to_string(),
+            },
+            lines: vec![],
+            days: vec![],
+            totals: DayTotals::default(),
+            graphics: vec![],
+            notes: vec![],
+        };
+
+        assert!(
+            !String::from_utf8(to_csv(&report))
+                .unwrap()
+                .contains("Gráficos")
+        );
+
+        report.graphics.push(GraphicLine {
+            date: "2026-12-10".to_string(),
+            start_time: "21:00:00".to_string(),
+            end_time: "21:00:15".to_string(),
+            duration_sec: Some(15.0),
+            advertiser: "Padaria".to_string(),
+            campaign: "Natal".to_string(),
+            graphic: "QR Natal".to_string(),
+            status: "Veiculado".to_string(),
+        });
+
+        let text = String::from_utf8(to_csv(&report)).unwrap();
+
+        assert!(text.contains("Gráficos;Data;Início;Fim"));
+        assert!(
+            text.contains("QR Natal;2026-12-10;21:00:00;21:00:15;15,0;Padaria;Natal;Veiculado")
         );
     }
 }

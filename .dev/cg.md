@@ -38,6 +38,24 @@ utils/cg.rs  run_cg_scheduler  ── a cada 1 s decide o que está no ar ──
 - **Decisão pura e testada**: `clock_active`, `program_active`,
   `scheduled_now` não dependem de relógio global.
 
+## Gráfico de campanha (anúncio)
+
+Um gráfico pode ter `campaign_id` (um QR code de patrocinador, um selo). Daí:
+
+- **Datas:** só vai ao ar com a campanha ativa e dentro das datas dela. O
+  "Mostrar agora" do operador ignora isso (a decisão é dele).
+- **Registro de exibição:** cada aparição vira uma linha em `airlog` com
+  `kind = 'cg'` (nome do gráfico em `spot_title`, anunciante e campanha copiados
+  como num spot, início, fim e duração reais). Só é registrado com o canal no ar;
+  reinício deixa a linha como `interrupted`, como nos spots.
+- **Relatório:** o PDF ganha a seção "Gráficos na tela", o CSV um bloco "Gráficos"
+  e o resumo da tela mostra quantas aparições e quanto tempo. Os totais de
+  spots não mudam.
+- **Retenção:** a mesma tabela e a mesma regra (60 dias, e histórico da campanha
+  até 60 dias depois do fim dela).
+- Não há planejador de intervalos nem limite por dia para CG: isso é coisa de
+  spot dentro da playlist.
+
 ## API (`/api/cg/{canal}`)
 
 | Método | Rota | Quem |
@@ -67,5 +85,4 @@ numéricos) e quando. A imagem é escolhida entre os arquivos do canal.
 - "Depois que um programa começa" conta a partir do momento em que o agendador
   percebe a troca (até 1 s de diferença); se o ffplayout reiniciar no meio do
   programa, a contagem recomeça dali.
-- Não há registro de CG no relatório/as-run (só o log do servidor).
 - Vários gráficos que ocupam o mesmo lugar se sobrepõem na ordem do id.

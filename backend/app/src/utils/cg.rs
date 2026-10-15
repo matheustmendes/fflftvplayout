@@ -8,7 +8,7 @@
 use std::{
     collections::{HashMap, HashSet},
     path::{Component, Path},
-    sync::Arc,
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -30,11 +30,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     db::{
-        handles,
-        models::{Cg, CgKind, CgMode, CgSchedule, CgWithSchedules},
+        handles::{self, CampaignWindow},
+        models::{AirResult, Cg, CgKind, CgMode, CgSchedule, CgWithSchedules},
     },
     player::controller::{ChannelController, ChannelManager},
     utils::{
+        airlog::format_timestamp,
         config::PlayoutConfig,
         errors::ServiceError,
         text::{opacity_to_alpha, parse_color},
@@ -266,19 +267,41 @@ pub fn check_cg(item: &CgWithSchedules, storage_root: &Path) -> Result<(), Servi
     Ok(())
 }
 
-/// The graphics that are on the air at `now`, in a stable order.
+/// A graphic of a campaign airs only while the campaign is active and `date`
+/// is inside its dates. A graphic without a campaign (or of a campaign that no
+/// longer exists) is not limited.
+pub fn campaign_allows(cg: &Cg, date: NaiveDate, campaigns: &HashMap<i32, CampaignWindow>) -> bool {
+    let Some(window) = cg.campaign_id.and_then(|id| campaigns.get(&id)) else {
+        return true;
+    };
+    let parse = |value: &Option<String>| {
+        value
+            .as_deref()
+            .and_then(|text| NaiveDate::parse_from_str(text, "%Y-%m-%d").ok())
+    };
+
+    window.active
+        && parse(&window.start_date).is_none_or(|start| date >= start)
+        && parse(&window.end_date).is_none_or(|end| date <= end)
+}
+
+/// The graphics that are on the air at `now`, in a stable order. A manual
+/// request ignores the dates of the campaign: the operator decided.
 pub fn active_layers(
     items: &[CgWithSchedules],
     now: NaiveDateTime,
     program: Option<&ProgramOnAir>,
     forced: &HashSet<i32>,
+    campaigns: &HashMap<i32, CampaignWindow>,
     config: &PlayoutConfig,
     warned: &mut HashSet<i32>,
 ) -> Vec<GraphicLayer> {
     let mut layers = Vec::new();
 
     for item in items {
-        let wanted = forced.contains(&item.cg.id) || scheduled_now(item, now, program);
+        let wanted = forced.contains(&item.cg.id)
+            || (scheduled_now(item, now, program)
+                && campaign_allows(&item.cg, now.date(), campaigns));
 
         if !wanted {
             continue;
@@ -311,6 +334,15 @@ struct ChannelCg {
     program: Option<ProgramOnAir>,
     program_key: Option<(String, u64)>,
     warned: HashSet<i32>,
+    campaigns: HashMap<i32, CampaignWindow>,
+    /// Graphics on the screen now: the airing log row, the name and the start.
+    on_screen: HashMap<i32, OnScreen>,
+}
+
+struct OnScreen {
+    log_id: Option<i32>,
+    name: String,
+    since: DateTime<Utc>,
 }
 
 impl ChannelCg {
@@ -323,6 +355,11 @@ impl ChannelCg {
         }
 
         self.loaded = Some(Instant::now());
+
+        match handles::select_campaign_windows(pool, channel).await {
+            Ok(campaigns) => self.campaigns = campaigns,
+            Err(error) => error!(channel = channel; "Cannot read the campaigns: {error}"),
+        }
 
         match handles::select_cgs(pool, channel).await {
             Ok(items) => {
@@ -361,6 +398,97 @@ impl ChannelCg {
             }),
             started: now,
         });
+    }
+}
+
+impl ChannelCg {
+    /// Keeps the airing log in step with the screen: a row opens when a graphic
+    /// appears and closes when it leaves.
+    async fn record(
+        &mut self,
+        pool: &SqlitePool,
+        manager: &ChannelManager,
+        layers: &[GraphicLayer],
+        now: DateTime<Utc>,
+        local: NaiveDateTime,
+        alive: bool,
+    ) {
+        let visible: HashSet<i32> = layers
+            .iter()
+            .filter_map(|layer| i32::try_from(layer.id).ok())
+            .collect();
+        let gone: Vec<i32> = self
+            .on_screen
+            .keys()
+            .filter(|id| !visible.contains(id))
+            .copied()
+            .collect();
+
+        for id in gone {
+            let Some(entry) = self.on_screen.remove(&id) else {
+                continue;
+            };
+            let Some(log_id) = entry.log_id else {
+                continue;
+            };
+            let seconds = (now - entry.since).num_milliseconds() as f64 / 1000.0;
+            let (result, reason) = if alive {
+                (AirResult::Played, "")
+            } else {
+                (AirResult::Interrupted, "the playout stopped")
+            };
+
+            if let Err(error) = handles::finish_airing(
+                pool,
+                log_id,
+                &format_timestamp(now),
+                seconds,
+                result,
+                reason,
+            )
+            .await
+            {
+                error!(channel = manager.id; "Cannot close the log of graphic '{}': {error}", entry.name);
+            }
+        }
+
+        for id in visible {
+            if self.on_screen.contains_key(&id) {
+                continue;
+            }
+
+            let Some(item) = self.items.iter().find(|item| item.cg.id == id) else {
+                continue;
+            };
+            let date = manager.current_date.lock().await.clone();
+            let air_date = if date.is_empty() {
+                local.format("%Y-%m-%d").to_string()
+            } else {
+                date
+            };
+            let log_id = handles::begin_cg_airing(
+                pool,
+                manager.id,
+                &air_date,
+                item.cg.campaign_id,
+                &item.cg.name,
+                &format_timestamp(now),
+            )
+            .await
+            .map_err(|error| {
+                error!(channel = manager.id; "Cannot log graphic '{}': {error}", item.cg.name);
+            })
+            .ok();
+
+            self.on_screen.insert(
+                id,
+                OnScreen {
+                    log_id,
+                    name: item.cg.name.clone(),
+                    since: now,
+                },
+            );
+        }
     }
 }
 
@@ -424,15 +552,24 @@ pub async fn run_cg_scheduler(
             state.follow_program(&manager, local).await;
 
             let forced = forced_ids(&manager, now);
-            let layers = active_layers(
-                &state.items,
-                local,
-                state.program.as_ref(),
-                &forced,
-                &config,
-                &mut state.warned,
-            );
+            let alive = manager.is_alive.load(Ordering::SeqCst);
+            let layers = if alive {
+                active_layers(
+                    &state.items,
+                    local,
+                    state.program.as_ref(),
+                    &forced,
+                    &state.campaigns,
+                    &config,
+                    &mut state.warned,
+                )
+            } else {
+                Vec::new()
+            };
 
+            state
+                .record(&pool, &manager, &layers, now, local, alive)
+                .await;
             manager.graphics.set(layers);
         }
     }
@@ -471,6 +608,7 @@ mod tests {
             id: 7,
             channel_id: 1,
             name: "g".to_string(),
+            campaign_id: None,
             kind,
             text: "Hello".to_string(),
             image_path: String::new(),
@@ -660,5 +798,38 @@ mod tests {
             &rule,
             NaiveDate::from_ymd_opt(2026, 10, 18).unwrap()
         ));
+    }
+
+    fn window(start: Option<&str>, end: Option<&str>, active: bool) -> CampaignWindow {
+        CampaignWindow {
+            start_date: start.map(str::to_string),
+            end_date: end.map(str::to_string),
+            active,
+        }
+    }
+
+    #[test]
+    fn a_campaign_graphic_airs_only_inside_the_dates_of_the_campaign() {
+        let campaigns = HashMap::from([
+            (1, window(Some("2026-12-01"), Some("2026-12-24"), true)),
+            (2, window(None, None, false)),
+        ]);
+        let mut cg = graphic(CgKind::Text);
+        let day = |text: &str| NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap();
+
+        cg.campaign_id = Some(1);
+        assert!(!campaign_allows(&cg, day("2026-11-30"), &campaigns));
+        assert!(campaign_allows(&cg, day("2026-12-01"), &campaigns));
+        assert!(campaign_allows(&cg, day("2026-12-24"), &campaigns));
+        assert!(!campaign_allows(&cg, day("2026-12-25"), &campaigns));
+
+        cg.campaign_id = Some(2);
+        assert!(!campaign_allows(&cg, day("2026-12-10"), &campaigns));
+
+        // No campaign, or one that was deleted: not limited.
+        cg.campaign_id = None;
+        assert!(campaign_allows(&cg, day("2030-01-01"), &campaigns));
+        cg.campaign_id = Some(99);
+        assert!(campaign_allows(&cg, day("2030-01-01"), &campaigns));
     }
 }

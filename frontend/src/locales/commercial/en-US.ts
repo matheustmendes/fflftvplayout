@@ -213,6 +213,8 @@ export default {
         add: 'Add ({count})',
     },
     reports: {
+        graphics:
+            'On-screen graphics: {count} appearance ({time} on air) | On-screen graphics: {count} appearances ({time} on air). The full list is in the PDF and the spreadsheet.',
         help: 'Choose the advertiser and the period. Download the PDF or the spreadsheet (CSV) and send it to the advertiser.',
         advertiser: 'Advertiser',
         all: 'All',

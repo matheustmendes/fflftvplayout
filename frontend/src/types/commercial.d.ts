@@ -173,6 +173,7 @@ declare global {
         lines: unknown[]
         days: ReportDayTotals[]
         totals: ReportDayTotals
+        graphics: { duration_sec: number | null }[]
         notes: string[]
     }
 

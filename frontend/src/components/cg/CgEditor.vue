@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import CgStage from '@/components/cg/CgStage.vue'
 import StorageFilePicker, { type PickedFile } from '@/components/commercial/StorageFilePicker.vue'
 import HelpTip from '@/components/ui/HelpTip.vue'
 
+import { useCommercialApi } from '@/composables/commercialApi'
 import { ALL_DAYS, WORK_DAYS, newRule, shortClock, type Cg, type CgRule } from '@/composables/cgApi'
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'bmp']
@@ -29,6 +30,17 @@ const draft = ref<Cg>({
     })),
 })
 const picking = ref(false)
+const campaigns = ref<CommercialCampaign[]>([])
+
+onMounted(async () => {
+    try {
+        campaigns.value = (await useCommercialApi().campaigns()).filter(
+            (campaign) => campaign.active || campaign.id === draft.value.campaign_id,
+        )
+    } catch {
+        campaigns.value = []
+    }
+})
 
 const isNew = computed(() => !draft.value.id)
 const canSave = computed(
@@ -142,6 +154,18 @@ function submit() {
                             maxlength="120"
                             :placeholder="t('cg.editor.namePlaceholder')"
                         />
+                    </label>
+
+                    <label v-if="campaigns.length" class="form-control">
+                        <span class="label-text mb-1">
+                            {{ t('cg.editor.campaign') }} <HelpTip :text="t('cg.editor.campaignHelp')" />
+                        </span>
+                        <select v-model="draft.campaign_id" class="select select-sm w-full">
+                            <option :value="null">{{ t('cg.editor.campaignNone') }}</option>
+                            <option v-for="campaign in campaigns" :key="campaign.id" :value="campaign.id">
+                                {{ campaign.name }}
+                            </option>
+                        </select>
                     </label>
 
                     <div role="tablist" class="tabs tabs-box tabs-sm w-fit">

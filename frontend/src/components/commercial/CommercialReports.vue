@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { friendlyError } from '@/composables/friendlyError'
 import { useConfig } from '@/stores/config'
 import { useIndex } from '@/stores/index'
-import { addDays, shortDate, todayInChannel, useCommercialApi } from '@/composables/commercialApi'
+import { addDays, formatDuration, shortDate, todayInChannel, useCommercialApi } from '@/composables/commercialApi'
 
 const REPORT_DEFAULT_DAYS = 30
 
@@ -104,6 +104,10 @@ watch(advertiserId, () => {
 })
 onMounted(load)
 watch(() => configStore.i, load)
+
+const graphicsSeconds = computed(() =>
+    (report.value?.graphics ?? []).reduce((sum, line) => sum + (line.duration_sec ?? 0), 0),
+)
 </script>
 <template>
     <div class="space-y-5">
@@ -193,6 +197,15 @@ watch(() => configStore.i, load)
                     </tbody>
                 </table>
             </div>
+            <p v-if="report.graphics.length" class="text-sm">
+                <i class="bi bi-layers me-1 opacity-60" />
+                {{
+                    t('commercial.reports.graphics', {
+                        count: report.graphics.length,
+                        time: formatDuration(graphicsSeconds),
+                    })
+                }}
+            </p>
         </section>
     </div>
 </template>

@@ -1161,6 +1161,8 @@ pub enum AirKind {
     #[default]
     Spot,
     Live,
+    /// A graphic (CG) that appeared on the screen.
+    Cg,
 }
 
 /// How a planned or airing spot ended. Only `Played` counts as aired in the
@@ -1268,6 +1270,10 @@ pub struct Cg {
     #[serde(default)]
     pub channel_id: i32,
     pub name: String,
+    /// The campaign the graphic advertises. It airs only inside the dates of
+    /// the campaign and is recorded in the airing log.
+    #[serde(default)]
+    pub campaign_id: Option<i32>,
     #[serde(default)]
     pub kind: CgKind,
     #[serde(default)]

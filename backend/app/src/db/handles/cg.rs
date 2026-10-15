@@ -7,18 +7,27 @@ use crate::{
     utils::errors::ProcessError,
 };
 
+/// When a campaign may air: its dates (`YYYY-MM-DD`, open ends allowed) and
+/// whether it is still active.
+#[derive(Debug, Clone)]
+pub struct CampaignWindow {
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+    pub active: bool,
+}
+
 const INSERT_CG: &str = "INSERT INTO cg (
-        channel_id, name, kind, text, image_path, x_pct, y_pct, size_pct, font_family,
+        channel_id, name, campaign_id, kind, text, image_path, x_pct, y_pct, size_pct, font_family,
         font_weight, text_color, box_enabled, box_color, box_opacity, opacity,
         fade_in_seconds, enabled
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)";
+    VALUES ($1, $2, $18, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)";
 
 const UPDATE_CG: &str = "UPDATE cg SET
         name = $3, kind = $4, text = $5, image_path = $6, x_pct = $7, y_pct = $8,
         size_pct = $9, font_family = $10, font_weight = $11, text_color = $12,
         box_enabled = $13, box_color = $14, box_opacity = $15, opacity = $16,
-        fade_in_seconds = $17, enabled = $18
+        fade_in_seconds = $17, enabled = $18, campaign_id = $19
     WHERE id = $1 AND channel_id = $2";
 
 const INSERT_SCHEDULE: &str = "INSERT INTO cg_schedule (
@@ -103,6 +112,7 @@ pub async fn insert_cg(
         .bind(cg.opacity)
         .bind(cg.fade_in_seconds)
         .bind(cg.enabled)
+        .bind(cg.campaign_id)
         .execute(&mut *transaction)
         .await
         .map(|done| done.last_insert_rowid())
@@ -143,6 +153,7 @@ pub async fn update_cg(
         .bind(cg.opacity)
         .bind(cg.fade_in_seconds)
         .bind(cg.enabled)
+        .bind(cg.campaign_id)
         .execute(&mut *transaction)
         .await?
         .rows_affected();
@@ -196,4 +207,50 @@ async fn insert_schedules(
     }
 
     Ok(())
+}
+
+/// The dates in which each campaign of the channel may air; archived campaigns
+/// are included with `active = false`.
+pub async fn select_campaign_windows(
+    pool: &SqlitePool,
+    channel_id: i32,
+) -> Result<HashMap<i32, CampaignWindow>, ProcessError> {
+    const QUERY: &str =
+        "SELECT id, start_date, end_date, active FROM campaign WHERE channel_id = $1";
+
+    let rows: Vec<(i32, Option<String>, Option<String>, bool)> = sqlx::query_as(QUERY)
+        .bind(channel_id)
+        .fetch_all(pool)
+        .await?;
+    let windows = rows
+        .into_iter()
+        .map(|(id, start_date, end_date, active)| {
+            (
+                id,
+                CampaignWindow {
+                    start_date,
+                    end_date,
+                    active,
+                },
+            )
+        })
+        .collect();
+
+    Ok(windows)
+}
+
+/// Whether a campaign exists on the channel.
+pub async fn campaign_exists(
+    pool: &SqlitePool,
+    channel_id: i32,
+    campaign_id: i32,
+) -> Result<bool, ProcessError> {
+    let found: Option<i32> =
+        sqlx::query_scalar("SELECT id FROM campaign WHERE id = $1 AND channel_id = $2")
+            .bind(campaign_id)
+            .bind(channel_id)
+            .fetch_optional(pool)
+            .await?;
+
+    Ok(found.is_some())
 }

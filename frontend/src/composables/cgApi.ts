@@ -25,6 +25,7 @@ export interface CgRule {
 export interface Cg {
     id?: number
     name: string
+    campaign_id: number | null
     kind: CgKind
     text: string
     image_path: string
@@ -70,6 +71,7 @@ export function newRule(): CgRule {
 export function newCg(): Cg {
     return {
         name: '',
+        campaign_id: null,
         kind: 'text',
         text: '',
         image_path: '',

@@ -232,13 +232,46 @@ pub async fn finish_live(
     Ok(())
 }
 
+/// A graphic (CG) appears on the screen. The names of the advertiser and the
+/// campaign are copied into the row like for a spot.
+pub async fn begin_cg_airing(
+    pool: &SqlitePool,
+    channel_id: i32,
+    air_date: &str,
+    campaign_id: Option<i32>,
+    graphic_name: &str,
+    started: &str,
+) -> Result<i32, ProcessError> {
+    const QUERY: &str = "INSERT INTO airlog (
+            channel_id, air_date, kind, campaign_id, advertiser_id, advertiser_name,
+            campaign_name, spot_title, actual_start, result
+        )
+        SELECT $1, $2, 'cg', campaign.id, campaign.advertiser_id,
+            COALESCE(advertiser.name, ''), COALESCE(campaign.name, ''), $4, $5, 'airing'
+        FROM (SELECT $3 AS campaign_id)
+        LEFT JOIN campaign ON campaign.id = campaign_id AND campaign.channel_id = $1
+        LEFT JOIN advertiser ON advertiser.id = campaign.advertiser_id
+        RETURNING id";
+
+    let id = sqlx::query_scalar(QUERY)
+        .bind(channel_id)
+        .bind(air_date)
+        .bind(campaign_id)
+        .bind(graphic_name)
+        .bind(started)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(id)
+}
+
 /// A restart cannot finish what was on the air. Close those rows, so the log
 /// never claims something is still airing.
 pub async fn close_open_airings(pool: &SqlitePool, ended: &str) -> Result<u64, ProcessError> {
     let spots = sqlx::query(
         "UPDATE airlog
         SET result = 'interrupted', reason = 'the playout stopped', actual_end = $1
-        WHERE kind = 'spot' AND result = 'airing'",
+        WHERE kind IN ('spot', 'cg') AND result = 'airing'",
     )
     .bind(ended)
     .execute(pool)
@@ -1156,6 +1189,69 @@ mod tests {
                 .any(|row| row.air_date == "2026-08-01"
                     && row.campaign_id == Some(running.campaign_id)),
             "the campaign that ended on 2026-11-20 keeps its August history"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_graphic_of_a_campaign_is_logged_like_a_spot() {
+        let pool = pool().await;
+        let identity = spot(&pool, 1, "Natal", "commercials/natal.mp4").await;
+
+        let id = begin_cg_airing(&pool, 1, DATE, Some(identity.campaign_id), "QR Natal", NOON)
+            .await
+            .unwrap();
+        let open = all(&pool).await;
+
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].kind, AirKind::Cg);
+        assert_eq!(open[0].result, AirResult::Airing);
+        assert_eq!(open[0].spot_title, "QR Natal");
+        assert_eq!(open[0].campaign_id, Some(identity.campaign_id));
+        assert_eq!(open[0].campaign_name, identity.campaign_name);
+        assert_eq!(open[0].advertiser_name, identity.advertiser_name);
+
+        assert!(
+            finish_airing(
+                &pool,
+                id,
+                "2026-12-10T12:00:15.000Z",
+                15.0,
+                AirResult::Played,
+                ""
+            )
+            .await
+            .unwrap()
+        );
+
+        let closed = all(&pool).await;
+
+        assert_eq!(closed[0].result, AirResult::Played);
+        assert_eq!(closed[0].actual_duration_sec, Some(15.0));
+    }
+
+    #[tokio::test]
+    async fn a_graphic_without_a_campaign_is_logged_and_a_restart_interrupts_it() {
+        let pool = pool().await;
+
+        begin_cg_airing(&pool, 1, DATE, None, "Selo", NOON)
+            .await
+            .unwrap();
+        // A campaign that is not of this channel leaves the names empty.
+        let other = spot(&pool, 2, "Outra", "commercials/outra.mp4").await;
+
+        begin_cg_airing(&pool, 1, DATE, Some(other.campaign_id), "Selo 2", NOON)
+            .await
+            .unwrap();
+
+        let rows = all(&pool).await;
+
+        assert!(rows.iter().all(|row| row.campaign_name.is_empty()));
+        assert_eq!(close_open_airings(&pool, NOON).await.unwrap(), 2);
+        assert!(
+            all(&pool)
+                .await
+                .iter()
+                .all(|row| row.result == AirResult::Interrupted)
         );
     }
 }
