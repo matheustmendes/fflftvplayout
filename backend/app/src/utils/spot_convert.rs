@@ -1120,10 +1120,12 @@ mod tests {
 
         assert!(output.status.success());
 
-        output
-            .stdout
-            .chunks_exact(2)
-            .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]))
+        // Two bytes per sample, little endian; a stray last byte is ignored.
+        let (pairs, _) = output.stdout.as_chunks::<2>();
+
+        pairs
+            .iter()
+            .map(|bytes| i16::from_le_bytes(*bytes))
             .collect()
     }
 
