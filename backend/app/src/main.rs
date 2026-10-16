@@ -46,6 +46,7 @@ use ffplayout::{
         mail::{self, MailQueue},
         playlist::generate_playlist,
         system::SystemStat,
+        telegram,
         time_machine::set_mock_time,
     },
 };
@@ -168,6 +169,13 @@ async fn async_main() -> Result<(), ProcessError> {
         tokio::spawn(auto_plan::run_auto_plan(
             pool.clone(),
             app_state.controller.clone(),
+            shutdown.clone(),
+        ));
+
+        tokio::spawn(telegram::run(
+            pool.clone(),
+            app_state.controller.clone(),
+            system.clone(),
             shutdown.clone(),
         ));
 

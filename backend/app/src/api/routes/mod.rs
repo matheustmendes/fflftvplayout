@@ -40,6 +40,7 @@ mod program;
 mod public;
 mod setup;
 mod system;
+mod telegram;
 mod user;
 
 pub use cg::*;
@@ -57,6 +58,7 @@ pub use program::*;
 pub use public::*;
 pub use setup::*;
 pub use system::*;
+pub use telegram::*;
 pub use user::*;
 
 use crate::{

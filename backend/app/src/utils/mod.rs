@@ -36,6 +36,7 @@ pub mod setup;
 pub mod spot_convert;
 pub mod system;
 pub mod task_runner;
+pub mod telegram;
 pub mod text;
 pub mod time_machine;
 

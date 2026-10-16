@@ -146,6 +146,12 @@ const router = createRouter({
                     meta: { showHeader: true, roles: ['global_admin', 'channel_admin'] },
                 },
                 {
+                    path: 'telegram',
+                    name: 'configure-telegram',
+                    component: () => import('@/components/config/ConfigTelegram.vue'),
+                    meta: { showHeader: true, roles: ['global_admin', 'channel_admin'] },
+                },
+                {
                     path: 'user',
                     name: 'configure-user',
                     component: () => import('@/components/config/ConfigUser.vue'),

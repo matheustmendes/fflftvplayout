@@ -148,6 +148,8 @@ horário e o EPG continuam valendo, e o engine não muda.
 ### Fase 4: robustez e VPS
 - Deploy na VPS (Docker Compose ou `.deb`), monitoramento e alertas por
   e-mail/HTTP, contingência opcional.
+- Bot do Telegram (avisos e consultas, sem ações): **feito**, ver `.dev/telegram.md`.
+  Aceite em `.dev/acceptance/F8.md` (exige um bot real, então é feito na máquina local).
 
 ## 5. Decisões do cliente (respondidas pelo usuário)
 

@@ -31,7 +31,11 @@ use crate::{
     file::{init_storage, local::LocalStorage},
     player::{output::player, utils::Media},
     utils::{
-        config::PlayoutConfig, errors::ServiceError, logging::Target, system::SystemStat,
+        config::PlayoutConfig,
+        errors::ServiceError,
+        logging::Target,
+        system::SystemStat,
+        telegram::events::{self as telegram_events, Event as TelegramEvent},
         text::text_config,
     },
 };
@@ -740,6 +744,11 @@ async fn supervisor_loop(
             );
 
             error!(target: Target::All.as_str(), channel = channel_id; "Run channel <span class=\"log-number\">{channel_id}</span> failed: {e} | {retry_msg}");
+
+            telegram_events::emit(TelegramEvent::OutputFailed {
+                channel: channel_id,
+                reason: e.to_string(),
+            });
 
             trace!(
                 "Runtime has <span class=\"log-number\">{}</span> active tasks",

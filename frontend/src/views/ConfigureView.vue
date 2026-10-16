@@ -45,6 +45,7 @@ const tabs = computed<SettingsTab[]>(() => {
         { name: 'configure-playout', label: t('settings2.tabs.output'), icon: 'bi-broadcast', playout: true },
         { name: 'configure-audio', label: t('settings2.tabs.audio'), icon: 'bi-volume-up', playout: true },
         { name: 'configure-recording', label: t('settings2.tabs.recording'), icon: 'bi-record-circle', playout: true },
+        { name: 'configure-telegram', label: t('settings2.tabs.telegram'), icon: 'bi-telegram' },
         {
             name: 'configure-user',
             label: authStore.role === 'global_admin' ? t('settings2.tabs.accounts') : t('settings2.tabs.account'),

@@ -13,6 +13,7 @@ pub mod refresh_token;
 pub mod relay;
 pub mod setup;
 pub mod source;
+pub mod telegram;
 pub mod user;
 pub mod week_template;
 
@@ -31,5 +32,6 @@ pub use refresh_token::*;
 pub use relay::*;
 pub use setup::*;
 pub use source::*;
+pub use telegram::*;
 pub use user::*;
 pub use week_template::*;

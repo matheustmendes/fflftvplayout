@@ -1,5 +1,6 @@
 import cg from './cg/en-US.ts'
 import commercial from './commercial/en-US.ts'
+import telegram from './telegram/en-US.ts'
 import ux from './ux/en-US.ts'
 import settings2 from './ux/settings.en-US.ts'
 import screens from './ux/screens.en-US.ts'
@@ -15,6 +16,7 @@ export default {
     },
     cg,
     commercial,
+    telegram,
     ...ux,
     settings2,
     ...screens,

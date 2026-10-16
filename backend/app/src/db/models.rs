@@ -1706,6 +1706,100 @@ impl RelayConfig {
     }
 }
 
+/// What a channel wants from the Telegram bot.
+#[derive(Debug, Clone, Deserialize, Serialize, sqlx::FromRow, PartialEq, Eq)]
+pub struct TelegramSettings {
+    #[serde(default, skip_deserializing)]
+    pub channel_id: i32,
+    #[serde(default)]
+    pub enabled: bool,
+    /// Group (a negative number) or person the bot talks to.
+    #[serde(default)]
+    pub chat_id: String,
+    #[serde(default = "enabled_by_default")]
+    pub alert_output: bool,
+    #[serde(default = "enabled_by_default")]
+    pub alert_destinations: bool,
+    #[serde(default = "enabled_by_default")]
+    pub alert_filler: bool,
+    #[serde(default = "enabled_by_default")]
+    pub alert_playlist: bool,
+    #[serde(default = "enabled_by_default")]
+    pub alert_commercials: bool,
+    #[serde(default = "enabled_by_default")]
+    pub alert_disk: bool,
+    #[serde(default = "enabled_by_default")]
+    pub daily_summary: bool,
+    /// Clock time of the channel, `HH:MM`.
+    #[serde(default = "default_summary_time")]
+    pub summary_time: String,
+    /// The group may ask the bot for the state of the channel.
+    #[serde(default = "enabled_by_default")]
+    pub commands_enabled: bool,
+}
+
+const fn enabled_by_default() -> bool {
+    true
+}
+
+fn default_summary_time() -> String {
+    "08:00".to_string()
+}
+
+impl Default for TelegramSettings {
+    fn default() -> Self {
+        Self {
+            channel_id: 0,
+            enabled: false,
+            chat_id: String::new(),
+            alert_output: true,
+            alert_destinations: true,
+            alert_filler: true,
+            alert_playlist: true,
+            alert_commercials: true,
+            alert_disk: true,
+            daily_summary: true,
+            summary_time: default_summary_time(),
+            commands_enabled: true,
+        }
+    }
+}
+
+impl TelegramSettings {
+    /// The chat as the number Telegram uses, when there is one.
+    pub fn chat(&self) -> Option<i64> {
+        self.chat_id.trim().parse().ok()
+    }
+
+    pub fn summary_clock(&self) -> NaiveTime {
+        NaiveTime::parse_from_str(self.summary_time.trim(), "%H:%M")
+            .unwrap_or_else(|_| NaiveTime::from_hms_opt(8, 0, 0).unwrap_or_default())
+    }
+
+    /// The messages are for the person at the settings screen, so they are in
+    /// Portuguese.
+    pub fn validate(&self) -> Result<(), String> {
+        let chat = self.chat_id.trim();
+
+        if !chat.is_empty() && chat.parse::<i64>().is_err() {
+            return Err(
+                "O número do chat deve ser um número, por exemplo -1001234567890 para um grupo."
+                    .to_string(),
+            );
+        }
+
+        if self.enabled && chat.is_empty() {
+            return Err("Informe o número do chat antes de ligar o bot.".to_string());
+        }
+
+        if NaiveTime::parse_from_str(self.summary_time.trim(), "%H:%M").is_err() {
+            return Err("O horário do resumo deve estar no formato HH:MM.".to_string());
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod commercial_tests {
     use super::*;

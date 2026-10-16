@@ -26,6 +26,8 @@ mod configuration;
 mod files;
 #[path = "api/health.rs"]
 mod health;
+#[path = "api/telegram.rs"]
+mod telegram;
 #[path = "api/users.rs"]
 mod users;
 

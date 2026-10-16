@@ -7,6 +7,7 @@ export default {
         output: 'Transmissão',
         audio: 'Áudio',
         recording: 'Gravação',
+        telegram: 'Telegram',
         account: 'Minha conta',
         accounts: 'Usuários',
         system: 'Sistema',
