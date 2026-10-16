@@ -191,6 +191,40 @@ sudo systemctl start ffplayout
 **Copie os backups para fora da VPS** (outro servidor ou armazenamento de
 objetos): um backup na mesma máquina não protege contra a perda da máquina.
 
+## 6. Trazer o conteúdo de um servidor FTP
+
+`deploy/ftp-import.sh` copia os vídeos e arquivos de um servidor FTP **direto para a
+VPS** (nada passa pelo seu computador). Usa o `lftp`: retoma de onde parou se a conexão
+cair, baixa vários arquivos ao mesmo tempo e aceita FTP, FTPS e SFTP.
+
+```sh
+sudo deploy/ftp-import.sh init       # cria /etc/ffplayout/ftp-import.conf (modelo)
+sudo nano /etc/ffplayout/ftp-import.conf   # servidor, usuário, senha, pastas
+sudo deploy/ftp-import.sh test       # confere o acesso e lista a pasta
+sudo deploy/ftp-import.sh size       # tamanho no FTP x espaço livre aqui
+sudo deploy/ftp-import.sh dry-run    # o que seria baixado, sem baixar
+sudo deploy/ftp-import.sh start      # baixa em segundo plano (sobrevive ao SSH)
+sudo deploy/ftp-import.sh logs       # acompanha
+sudo deploy/ftp-import.sh verify     # confere se tudo já está aqui
+sudo deploy/ftp-import.sh install-timer   # repete todo dia às 4h30 (conteúdo novo)
+```
+
+Cuidados que o script já toma:
+- **Nunca apaga e nunca sobrescreve** por padrão (`FTP_MODE=missing`, `DELETE_REMOVED=0`).
+- Baixa para `nome.part` e só troca para o nome final quando termina, para o ffplayout
+  não ver arquivo pela metade.
+- Não copia as permissões do servidor (um servidor que mostra `000` deixaria os arquivos
+  ilegíveis) e deixa os arquivos com o dono do ffplayout.
+- A senha fica só no arquivo de configuração (só o administrador lê), vai ao `lftp` pela
+  entrada padrão e é mascarada em tudo o que aparece na tela e no log.
+- `LIMIT_MBIT` limita a velocidade, para a importação não disputar banda com o sinal no
+  ar. O `start` roda com prioridade baixa de CPU e de disco.
+
+Sobre os comerciais: o script só traz os arquivos para o storage. Para um comercial valer
+na programação ele precisa ser **registrado** (Publicidade > Comerciais, ou
+`POST /api/commercials/{canal}/spots` apontando o arquivo do storage), o que dispara a
+conversão para o formato do canal.
+
 ## Testado e não testado
 
 Testado na nuvem (MediaMTX compilado da branch principal, FFmpeg 7.1.1):
@@ -216,6 +250,14 @@ Testado na nuvem para o `install.sh`:
   Ubuntu 24.04; o modelo agora usa `listen 443 ssl http2;`.
 - A compilação **sem** o player de desktop (`--no-default-features --features
   embed_frontend`), com `cargo check`.
+
+Testado na nuvem para o `ftp-import.sh` (contra um servidor FTP local): acesso com senha
+cheia de caracteres especiais, `dry-run`, download com retomada depois de interrupção
+(os arquivos conferem byte a byte), exclusão de padrões, 3 pedaços por arquivo, modo
+`newer`, `DELETE_REMOVED`, `verify` achando arquivo novo, e a senha ausente do log.
+**Não testado:** FTPS e SFTP, o `start` e o `install-timer` (precisam de systemd) e um
+servidor FTP real, que pode ter limites de conexões simultâneas (se reclamar, baixe
+`PARALLEL_FILES` para 1 ou 2).
 
 **Não testado** no `install.sh` (precisa de uma VPS de verdade): o `apt`, o PPA do
 FFmpeg, o `rustup`, o build `release` completo, o `certbot`, o `systemd` e o `ufw`.
