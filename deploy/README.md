@@ -7,6 +7,53 @@ e backup.
 > **O que já foi testado e o que não foi** está no fim deste arquivo. Leia antes
 > de confiar no que não foi testado.
 
+## Instalação rápida (script)
+
+`deploy/install.sh` faz os passos deste arquivo sozinho, inclusive o build. Numa VPS
+nova (Debian 13 ou Ubuntu 22.04/24.04), com os domínios já apontados para ela:
+
+```sh
+git clone https://github.com/matheustmendes/fflftvplayout.git
+cd fflftvplayout
+sudo deploy/install.sh install \
+    --panel-domain painel.exemplo.com.br \
+    --signal-domain sinal.exemplo.com.br \
+    --email voce@exemplo.com.br \
+    --destinations 12
+```
+
+O que ele faz, na ordem: instala as dependências e o FFmpeg 7 (no Ubuntu usa o PPA
+`ppa:ubuntuhandbook1/ffmpeg7`), o Node 24 (do site oficial, com checksum) e o Rust
+(`rustup`, para o usuário que compila); compila o painel e o ffplayout **sem o player
+de desktop**; cria o usuário `ffpu` e as pastas em `/var/lib/ffplayout`; faz a
+configuração inicial **sem perguntas** (administrador com senha gerada); instala o relay
+MediaMTX (versão fixa, com checksum) com um usuário e uma senha por destino; liga o
+serviço; configura o nginx e pede o certificado Let's Encrypt; instala o backup diário;
+e libera as portas se o `ufw` estiver ativo.
+
+As senhas e os links dos destinos são **gerados** e ficam em
+`/root/ffplayout-credenciais.txt` (só o administrador lê). Nada é impresso na tela.
+
+- Sem `--panel-domain`/`--signal-domain`, o nginx não é configurado e o painel fica só em
+  `127.0.0.1:8787` (acesse por túnel SSH).
+- Pode rodar de novo: banco, senhas e certificados existentes não são refeitos.
+- **Atualizar:** `sudo deploy/install.sh update --pull` baixa a versão nova, compila, faz
+  backup do banco e troca o binário. Reiniciar corta a saída por poucos segundos; com
+  `--no-restart` o binário é trocado e você reinicia num momento calmo
+  (`sudo systemctl restart ffplayout`).
+- **Ver o estado:** `deploy/install.sh status`.
+- `deploy/install.sh --help` lista todas as opções (`--no-relay`, `--no-backup`,
+  `--skip-build`, `--admin-user`...).
+
+A compilação leva alguns minutos na primeira vez (o `release` usa LTO) e pede uma VPS
+com folga de memória e disco; como estimativa, não medida, conte com 4 GB de RAM (ou
+um swap) e uns 8 GB livres. Se a VPS for pequena, compile em outra máquina e use
+`--skip-build` com o binário copiado para `target/release/ffplayout`. Depois do script, siga os "Próximos passos" que ele imprime
+(saída Stream para o relay, destinos no Painel, Telegram).
+
+Os passos manuais abaixo continuam valendo para quem prefere instalar à mão ou já tem
+parte pronta.
+
 ## Visão geral
 
 ```
@@ -50,7 +97,7 @@ e ajuste o nome do parâmetro conforme a documentação daquela versão.
 ## 2. ffplayout
 
 1. Instale o ffplayout (pacote `.deb` ou binário) e o FFmpeg 7 ou mais novo.
-2. Copie `deploy/systemd/ffplayout.service` (ele escuta só em `127.0.0.1`).
+2. Copie `deploy/systemd/ffplayout.service` (ele escuta só em `127.0.0.1`). Ele espera o binário em `/usr/local/bin/ffplayout` e o banco em `/var/lib/ffplayout`; com o pacote `.deb` ajuste o `ExecStart` (veja o comentário no arquivo).
 3. No painel, em **Configurar > Playout**, escolha a saída **Stream** e use:
 
 ```
@@ -156,6 +203,23 @@ Testado na nuvem (MediaMTX compilado da branch principal, FFmpeg 7.1.1):
   instante e o relay aceitou a nova publicação poucos segundos depois.
 - O backup: criação, retenção, restauração do banco, erros de entrada.
 - O teto de reinício do supervisor e os alertas, com testes automatizados.
+
+Testado na nuvem para o `install.sh`:
+
+- `shellcheck` sem avisos e `bash -n`.
+- A geração do `mediamtx.yml` com 12 destinos, carregada pelo MediaMTX v1.18.0
+  (a versão fixada no script); o checksum e a extração do Node 24.
+- A configuração inicial sem perguntas (`ffplayout --init ...` com todas as opções):
+  cria o banco e o administrador, e o login funciona com a senha gerada.
+- O `nginx -t` da configuração completa (com certificados de teste) e da parte só de
+  porta 80. Isso achou um erro antigo: o `http2 on;` não existe no nginx 1.24 do
+  Ubuntu 24.04; o modelo agora usa `listen 443 ssl http2;`.
+- A compilação **sem** o player de desktop (`--no-default-features --features
+  embed_frontend`), com `cargo check`.
+
+**Não testado** no `install.sh` (precisa de uma VPS de verdade): o `apt`, o PPA do
+FFmpeg, o `rustup`, o build `release` completo, o `certbot`, o `systemd` e o `ufw`.
+Rode primeiro numa VPS descartável.
 
 **Não testado** (precisa da máquina e dos destinos reais):
 

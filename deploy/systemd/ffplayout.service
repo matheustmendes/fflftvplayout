@@ -8,7 +8,9 @@ StartLimitIntervalSec=0
 
 [Service]
 # A interface e a API só escutam em 127.0.0.1; o nginx faz o HTTPS na frente.
-ExecStart=/usr/bin/ffplayout -l 127.0.0.1:8787
+# Binário e banco como o deploy/install.sh os instala. Com o pacote .deb, o binário
+# fica em /usr/bin/ffplayout e o banco em /usr/share/ffplayout/db (tire o --db).
+ExecStart=/usr/local/bin/ffplayout --db /var/lib/ffplayout/ffplayout.db -l 127.0.0.1:8787
 Restart=always
 # O systemd é a segunda linha de defesa: se o processo inteiro morrer, volta em 1 s.
 RestartSec=1

@@ -52,4 +52,5 @@ As regras do backend estão em `backend/AGENTS.md` e são obrigatórias:
 - `frontend/`: UI web (Vue + Vite).
 - `migrations/`: SQL. Não editar migrations já publicadas; criar novas.
 - `.dev/`: notas de desenvolvimento e backlog.
+- `deploy/`: instalação na VPS (`install.sh`), relay, nginx, systemd e backup.
 - Agendador e controle de horário: ver `.dev/scheduler.md`.
