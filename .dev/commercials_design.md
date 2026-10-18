@@ -125,8 +125,14 @@ Passos:
    - rodízio ponderado por `weight`, **semente fixa** (data + janela) para que
      recompilar dê o mesmo resultado;
    - não repetir o mesmo anunciante em sequência quando houver alternativa.
-5. Fechar a duração da janela: acrescentar spots enquanto couberem; completar
-   a sobra com filler/vinheta (`storage.filler` existente); nunca ultrapassar.
+5. Fechar o intervalo: a duração da janela é uma **meta**, não um teto. Um
+   comercial sempre vai ao ar inteiro. Acrescentar spots enquanto couberem; se
+   nenhum couber, aceitar um que ultrapasse a meta em no máximo o tempo que
+   faltava (o bloco fica o mais perto possível dela). Campanha com posição
+   `first`/`last` sempre entra. Se o bloco passar da meta, o programa seguinte
+   começa depois; se faltar pouco, completar com filler/vinheta
+   (`storage.filler`). Programa com hora marcada reduz a meta do intervalo
+   anterior.
 6. Inserir os itens com `ad = true` (isso já aciona o fade do logo, 
    `player/output/playout.rs:253` [verificado]).
 7. Validar o total do dia: se a soma diferir do tamanho do dia, mostrar o

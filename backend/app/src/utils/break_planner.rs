@@ -127,14 +127,6 @@ impl PlannedItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct LeftOutCampaign {
-    pub campaign_id: i32,
-    pub name: String,
-    /// Length of the shortest spot of the campaign, in seconds.
-    pub shortest_spot_sec: f64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlannedBreak {
     pub window_id: i32,
     pub nominal_time: String,
@@ -146,9 +138,6 @@ pub struct PlannedBreak {
     pub spots_sec: f64,
     pub gap_sec: f64,
     pub spots: usize,
-    /// Campaigns that had spots and room in their daily limit, but none of
-    /// their spots fit what was left of the break.
-    pub left_out: Vec<LeftOutCampaign>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -167,9 +156,6 @@ pub enum WarningCode {
     BreakOffGrid,
     BreakEmpty,
     BreakUnderfilled,
-    /// A campaign was not aired in a break because its spots are longer than
-    /// the time that was left.
-    CampaignLeftOut,
     DayFilled,
     DaySlightlyLong,
     DayTooLong,
@@ -336,12 +322,13 @@ impl Usage {
     }
 }
 
-/// The spot of a campaign to use next: the one played least so far that fits.
-fn best_spot<'a>(campaign: &'a PlanCampaign, usage: &Usage, room: f64) -> Option<&'a PlanSpot> {
+/// The spot of a campaign to use next: the one played least so far that is no
+/// longer than `max_len`.
+fn best_spot<'a>(campaign: &'a PlanCampaign, usage: &Usage, max_len: f64) -> Option<&'a PlanSpot> {
     campaign
         .spots
         .iter()
-        .filter(|spot| spot.duration > 0.0 && spot.duration <= room + EPSILON)
+        .filter(|spot| spot.duration > 0.0 && spot.duration <= max_len + EPSILON)
         .min_by_key(|spot| (usage.spot_uses(spot), spot.id))
 }
 
@@ -359,6 +346,13 @@ fn pick<'a>(
 }
 
 /// Choose the spots of one break, in air order.
+///
+/// `duration_sec` is the target, not a ceiling: a spot always airs whole, so
+/// the last one may carry the block past the target. A spot is added while the
+/// target has not been reached; one that does not fit is only taken when the
+/// block would end no further from the target than the time still missing, so
+/// the break stays as close to the target as whole spots allow. A campaign
+/// that asks for the first or last place always airs.
 fn fill_break<'a>(
     duration_sec: f64,
     campaigns: &'a [PlanCampaign],
@@ -371,7 +365,7 @@ fn fill_break<'a>(
 
     // A campaign appears once per break and never beyond its daily limit.
     let candidates = |position: Option<BreakPosition>,
-                      room: f64,
+                      max_len: f64,
                       usage: &Usage,
                       in_break: &HashSet<i32>|
      -> Vec<(&'a PlanCampaign, &'a PlanSpot)> {
@@ -384,11 +378,11 @@ fn fill_break<'a>(
                     .max_per_day
                     .is_none_or(|limit| usage.campaign_uses(campaign) < limit)
             })
-            .filter_map(|campaign| best_spot(campaign, usage, room).map(|spot| (campaign, spot)))
+            .filter_map(|campaign| best_spot(campaign, usage, max_len).map(|spot| (campaign, spot)))
             .collect()
     };
 
-    let first = candidates(Some(BreakPosition::First), room, usage, &in_break);
+    let first = candidates(Some(BreakPosition::First), f64::INFINITY, usage, &in_break);
 
     if !first.is_empty() {
         let (campaign, spot) = pick(&first, rng);
@@ -401,7 +395,7 @@ fn fill_break<'a>(
 
     // The campaign that wants the last place is reserved before the rotation,
     // so the middle never takes its room.
-    let last_candidates = candidates(Some(BreakPosition::Last), room, usage, &in_break);
+    let last_candidates = candidates(Some(BreakPosition::Last), f64::INFINITY, usage, &in_break);
     let last = if last_candidates.is_empty() {
         None
     } else {
@@ -415,7 +409,25 @@ fn fill_break<'a>(
     };
 
     loop {
+        // The target is reached: the block is closed.
+        if room <= EPSILON {
+            break;
+        }
+
         let mut available = candidates(None, room, usage, &in_break);
+
+        if available.is_empty() {
+            // Nothing fits the time that is left. Take a spot that overshoots
+            // by no more than that time; a block without any spot takes one of
+            // any length, so a break is never empty because of its target.
+            let allowed = if chosen.is_empty() && last.is_none() {
+                f64::INFINITY
+            } else {
+                room * 2.0
+            };
+
+            available = candidates(None, allowed, usage, &in_break);
+        }
 
         if available.is_empty() {
             break;
@@ -536,7 +548,7 @@ fn walk_day(
 
                 let (break_items, planned) = build_break(input, placed, start, length, &mut usage);
 
-                walk.cursor = start + length;
+                walk.cursor = start + planned.spots_sec + planned.gap_sec;
                 warn_about_break(&planned, placed.window, warnings);
                 walk.items.extend(break_items);
                 walk.breaks.push(planned);
@@ -927,8 +939,7 @@ fn build_break(
         input.date, window.id, window.nominal_time
     ));
     let mut rng = Rng::new(seed);
-    let duration = length;
-    let chosen = fill_break(duration, &input.campaigns, usage, &mut rng);
+    let chosen = fill_break(length, &input.campaigns, usage, &mut rng);
     let mut items = Vec::new();
     let mut cursor = start;
 
@@ -953,8 +964,7 @@ fn build_break(
     }
 
     let spots_sec = cursor - start;
-    let gap = duration - spots_sec;
-    let left_out = campaigns_left_out(&input.campaigns, &chosen, usage);
+    let gap = (length - spots_sec).max(0.0);
 
     if gap >= MIN_FILLER_SECONDS {
         items.push(filler_item(
@@ -971,47 +981,14 @@ fn build_break(
         nominal_time: window.nominal_time.clone(),
         start_time: clock(input.day_start_sec + start),
         distance_sec: 0.0,
-        duration_sec: duration.round() as i32,
+        // What really airs: the target, or more when the last spot ran past it.
+        duration_sec: (spots_sec + gap).round() as i32,
         spots_sec,
-        gap_sec: gap.max(0.0),
+        gap_sec: gap,
         spots: chosen.len(),
-        left_out,
     };
 
     (items, planned)
-}
-
-/// The campaigns that could have aired in the break but had no spot short
-/// enough for the room that remained. Campaigns that reached their daily
-/// limit are not listed: leaving them out is what the limit asks for.
-fn campaigns_left_out(
-    campaigns: &[PlanCampaign],
-    chosen: &[(&PlanCampaign, &PlanSpot)],
-    usage: &Usage,
-) -> Vec<LeftOutCampaign> {
-    campaigns
-        .iter()
-        .filter(|campaign| !chosen.iter().any(|(picked, _)| picked.id == campaign.id))
-        .filter(|campaign| {
-            campaign
-                .max_per_day
-                .is_none_or(|limit| usage.campaign_uses(campaign) < limit)
-        })
-        .filter_map(|campaign| {
-            let shortest = campaign
-                .spots
-                .iter()
-                .map(|spot| spot.duration)
-                .filter(|duration| *duration > 0.0)
-                .min_by(f64::total_cmp)?;
-
-            Some(LeftOutCampaign {
-                campaign_id: campaign.id,
-                name: format!("{} - {}", campaign.advertiser_name, campaign.name),
-                shortest_spot_sec: shortest,
-            })
-        })
-        .collect()
 }
 
 fn filler_item(
@@ -1049,35 +1026,6 @@ fn filler_item(
 }
 
 fn warn_about_break(planned: &PlannedBreak, window: &PlanWindow, warnings: &mut Vec<PlanWarning>) {
-    // A full break that dropped campaigns is only the rotation at work. The
-    // warning is for time that stays empty because a spot is too long for it.
-    if !planned.left_out.is_empty() && planned.gap_sec >= MIN_FILLER_SECONDS {
-        let names: Vec<String> = planned
-            .left_out
-            .iter()
-            .map(|campaign| {
-                format!(
-                    "{} (menor comercial: {})",
-                    campaign.name,
-                    duration_text(campaign.shortest_spot_sec)
-                )
-            })
-            .collect();
-
-        warnings.push(PlanWarning::new(
-            WarningCode::CampaignLeftOut,
-            Severity::Warning,
-            format!(
-                "no intervalo das {}, de {}, sobraram {} e não coube: {}. O comercial é maior que o tempo que sobrou",
-                window.nominal_time,
-                duration_text(f64::from(planned.duration_sec)),
-                duration_text(planned.gap_sec),
-                names.join("; ")
-            ),
-            Some(window.id),
-        ));
-    }
-
     if planned.spots == 0 {
         warnings.push(PlanWarning::new(
             WarningCode::BreakEmpty,
@@ -1533,8 +1481,29 @@ mod tests {
     }
 
     #[test]
-    fn a_campaign_that_does_not_fit_is_reported_and_the_break_never_runs_over() {
-        let mut data = input(three_programs(), vec![window(1, "00:20:00", 60)], 3660.0);
+    fn a_spot_longer_than_the_target_airs_whole_and_pushes_the_next_program() {
+        let mut data = input(three_programs(), vec![window(1, "00:20:00", 30)], 3630.0);
+        data.campaigns = vec![campaign(1, 1, vec![spot(1, 45.0)])];
+        let result = plan(&data);
+        let planned = &result.breaks[0];
+        let last_program = result
+            .items
+            .iter()
+            .rev()
+            .find(|item| item.kind == ItemKind::Program)
+            .unwrap();
+
+        assert_eq!(spot_ids(&result), vec![1]);
+        assert_eq!(planned.duration_sec, 45);
+        assert_eq!(planned.gap_sec, 0.0);
+        assert_eq!(result.total_sec, 3645.0);
+        assert!(last_program.start_sec > 1200.0 + 45.0 - 1e-6);
+        assert!(!codes(&result).contains(&WarningCode::BreakEmpty));
+    }
+
+    #[test]
+    fn the_last_spot_may_pass_the_target_when_that_is_closest() {
+        let mut data = input(three_programs(), vec![window(1, "00:20:00", 60)], 3675.0);
         data.campaigns = vec![
             campaign(1, 1, vec![spot(1, 45.0)]),
             campaign(2, 2, vec![spot(2, 30.0)]),
@@ -1542,34 +1511,43 @@ mod tests {
         let result = plan(&data);
         let planned = &result.breaks[0];
 
-        assert!(planned.spots_sec <= 60.0);
-        assert_eq!(planned.spots, 1);
-        assert_eq!(planned.left_out.len(), 1);
-        assert_eq!(planned.left_out[0].shortest_spot_sec, 30.0);
-        assert!(codes(&result).contains(&WarningCode::CampaignLeftOut));
+        // 45 s leaves 15 s; the 30 s spot overshoots by 15 s, no more than
+        // what was missing, so it airs whole.
+        assert_eq!(planned.spots, 2);
+        assert_eq!(planned.spots_sec, 75.0);
+        assert_eq!(planned.duration_sec, 75);
+        assert_eq!(planned.gap_sec, 0.0);
     }
 
     #[test]
-    fn a_campaign_at_its_daily_limit_is_not_reported_as_left_out() {
+    fn a_spot_that_would_overshoot_far_beyond_the_target_is_not_taken() {
         let mut data = input(three_programs(), vec![window(1, "00:20:00", 60)], 3660.0);
-        let mut limited = campaign(1, 1, vec![spot(1, 20.0)]);
-
-        limited.max_per_day = Some(0);
-        data.campaigns = vec![limited, campaign(2, 2, vec![spot(2, 20.0)])];
+        data.campaigns = vec![
+            campaign(1, 1, vec![spot(1, 50.0)]),
+            campaign(2, 2, vec![spot(2, 40.0)]),
+        ];
         let result = plan(&data);
+        let planned = &result.breaks[0];
 
-        assert!(result.breaks[0].left_out.is_empty());
-        assert!(!codes(&result).contains(&WarningCode::CampaignLeftOut));
+        // 10 s are missing and the 40 s spot would overshoot by 30 s.
+        assert_eq!(planned.spots, 1);
+        assert_eq!(planned.gap_sec, 10.0);
+        assert_eq!(planned.duration_sec, 60);
+        assert_eq!(result.total_sec, 3660.0);
     }
 
     #[test]
-    fn a_spot_longer_than_the_break_is_never_used() {
-        let mut data = input(three_programs(), vec![window(1, "00:20:00", 30)], 3630.0);
-        data.campaigns = vec![campaign(1, 1, vec![spot(1, 31.0)])];
+    fn a_campaign_that_asks_for_the_last_place_airs_even_after_the_target() {
+        let mut data = input(three_programs(), vec![window(1, "00:20:00", 30)], 3645.0);
+        let mut closing = campaign(2, 2, vec![spot(2, 45.0)]);
+
+        closing.position = BreakPosition::Last;
+        data.campaigns = vec![campaign(1, 1, vec![spot(1, 20.0)]), closing];
         let result = plan(&data);
 
-        assert!(spot_ids(&result).is_empty());
-        assert!(codes(&result).contains(&WarningCode::BreakEmpty));
+        // The closing spot takes the target and passes it; nothing else fits.
+        assert_eq!(spot_ids(&result), vec![2]);
+        assert_eq!(result.breaks[0].duration_sec, 45);
     }
 
     #[test]

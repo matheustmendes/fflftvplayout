@@ -52,7 +52,6 @@ export default {
         break_empty: 'O intervalo das {time} ficou sem comerciais.',
         break_underfilled:
             'O intervalo das {time} ficou com menos comerciais que o tempo previsto; o resto é preenchido.',
-        campaign_left_out: '{detail}',
         day_filled: 'O dia foi completado com o conteúdo reserva até a hora de virar.',
         day_slightly_long: 'O dia passou um pouco do tamanho e será ajustado. {detail}',
         day_too_long: 'O dia ficou maior do que cabe. Tire programas da grade ou reduza intervalos. {detail}',
@@ -177,7 +176,7 @@ export default {
         help: 'Intervalos são os horários em que entram os comerciais. Eles entram na troca de programa mais próxima do horário pedido.',
         total: 'Total de intervalo: {time}',
         lengthHelp:
-            'A duração é um teto. O sistema escolhe comerciais que caibam nela e nunca passa do tempo: o que sobrar é completado com enchimento, e o comercial que não couber fica de fora, com aviso ao montar o dia.',
+            'A duração é a meta do intervalo. Os comerciais sempre passam inteiros: o sistema soma comerciais até chegar nela e o último pode passar um pouco, empurrando o programa seguinte. Se faltar pouco, o resto é completado com enchimento.',
         empty: 'Nenhum intervalo neste dia.',
         time: 'Horário',
         length: 'Duração',

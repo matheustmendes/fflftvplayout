@@ -54,7 +54,6 @@ export default {
         break_shortened: '{detail}',
         break_dropped: '{detail}',
         break_underfilled: 'The break at {time} has fewer spots than its length; the rest is filled.',
-        campaign_left_out: '{detail}',
         day_filled: 'The day was filled with reserve content up to the day change.',
         day_slightly_long: 'The day is slightly too long and will be adjusted. {detail}',
         day_too_long: 'The day is longer than it fits. Remove programs or shorten breaks. {detail}',
@@ -174,7 +173,7 @@ export default {
     breaks: {
         help: 'Breaks are the times when spots run. They start at the program change closest to the requested time.',
         lengthHelp:
-            'The length is a ceiling. Spots are picked to fit in it and the break never runs over: what is left is filled, and a spot that does not fit is left out, with a warning when the day is built.',
+            'The length is the target of the break. Spots always air whole: spots are added until it is reached and the last one may run a little past it, pushing the next program later. If only a little is missing, the rest is filled.',
         total: 'Total break time: {time}',
         empty: 'No breaks on this day.',
         time: 'Time',
