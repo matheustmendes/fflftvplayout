@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import CgStage from '@/components/cg/CgStage.vue'
 import StorageFilePicker, { type PickedFile } from '@/components/commercial/StorageFilePicker.vue'
 import HelpTip from '@/components/ui/HelpTip.vue'
+import RangeField from '@/components/ui/RangeField.vue'
 
 import { useCommercialApi } from '@/composables/commercialApi'
 import { ALL_DAYS, WORK_DAYS, newRule, shortClock, type Cg, type CgRule } from '@/composables/cgApi'
@@ -217,24 +218,17 @@ function submit() {
                 <section class="card bg-base-100 shadow p-4 space-y-3">
                     <h3 class="font-bold">{{ t('cg.editor.stepLook') }}</h3>
 
-                    <label class="form-control">
-                        <span class="label-text mb-1">
-                            {{ t('cg.editor.size') }}: {{ draft.size_pct }}%
-                            <HelpTip
-                                :text="
-                                    draft.kind === 'text' ? t('cg.editor.sizeTextHelp') : t('cg.editor.sizeImageHelp')
-                                "
-                            />
-                        </span>
-                        <input
-                            v-model.number="draft.size_pct"
-                            type="range"
-                            min="1"
-                            max="100"
-                            step="0.5"
-                            class="range range-sm range-accent"
-                        />
-                    </label>
+                    <!-- Letters above 30% of the picture are rare: the slider stays in the useful range
+                         and the number box still takes up to 100. -->
+                    <RangeField
+                        v-model="draft.size_pct"
+                        :label="t('cg.editor.size')"
+                        :help="draft.kind === 'text' ? t('cg.editor.sizeTextHelp') : t('cg.editor.sizeImageHelp')"
+                        :min="draft.kind === 'text' ? 1 : 2"
+                        :max="draft.kind === 'text' ? 30 : 100"
+                        :input-max="100"
+                        :step="draft.kind === 'text' ? 0.1 : 1"
+                    />
 
                     <template v-if="draft.kind === 'text'">
                         <div class="grid gap-3 sm:grid-cols-2">
@@ -261,16 +255,7 @@ function submit() {
                                 <span class="label-text mb-1">{{ t('cg.editor.boxColor') }}</span>
                                 <input v-model="draft.box_color" type="color" class="input input-sm w-full p-1" />
                             </label>
-                            <label class="form-control">
-                                <span class="label-text mb-1">{{ t('cg.editor.boxOpacity') }}: {{ boxPercent }}%</span>
-                                <input
-                                    v-model.number="boxPercent"
-                                    type="range"
-                                    min="0"
-                                    max="100"
-                                    class="range range-sm range-accent"
-                                />
-                            </label>
+                            <RangeField v-model="boxPercent" :label="t('cg.editor.boxOpacity')" :min="0" :max="100" />
                         </div>
 
                         <label class="form-control">
@@ -283,19 +268,13 @@ function submit() {
                                 <option value="left_to_right">{{ t('cg.editor.scrollRight') }}</option>
                             </select>
                         </label>
-                        <label v-if="draft.scroll !== 'none'" class="form-control">
-                            <span class="label-text mb-1">
-                                {{ t('cg.editor.scrollSpeed') }}: {{ draft.scroll_speed_pct }}%
-                            </span>
-                            <input
-                                v-model.number="draft.scroll_speed_pct"
-                                type="range"
-                                min="2"
-                                max="40"
-                                step="1"
-                                class="range range-sm range-accent"
-                            />
-                        </label>
+                        <RangeField
+                            v-if="draft.scroll !== 'none'"
+                            v-model="draft.scroll_speed_pct"
+                            :label="t('cg.editor.scrollSpeed')"
+                            :min="2"
+                            :max="40"
+                        />
 
                         <label class="form-control">
                             <span class="label-text mb-1">
@@ -305,18 +284,13 @@ function submit() {
                         </label>
                     </template>
 
-                    <label class="form-control">
-                        <span class="label-text mb-1">
-                            {{ t('cg.editor.opacity') }}: {{ percent }}% <HelpTip :text="t('cg.editor.opacityHelp')" />
-                        </span>
-                        <input
-                            v-model.number="percent"
-                            type="range"
-                            min="10"
-                            max="100"
-                            class="range range-sm range-accent"
-                        />
-                    </label>
+                    <RangeField
+                        v-model="percent"
+                        :label="t('cg.editor.opacity')"
+                        :help="t('cg.editor.opacityHelp')"
+                        :min="10"
+                        :max="100"
+                    />
 
                     <label class="form-control">
                         <span class="label-text mb-1">
