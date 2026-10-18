@@ -127,6 +127,14 @@ impl PlannedItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct LeftOutCampaign {
+    pub campaign_id: i32,
+    pub name: String,
+    /// Length of the shortest spot of the campaign, in seconds.
+    pub shortest_spot_sec: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PlannedBreak {
     pub window_id: i32,
     pub nominal_time: String,
@@ -138,6 +146,9 @@ pub struct PlannedBreak {
     pub spots_sec: f64,
     pub gap_sec: f64,
     pub spots: usize,
+    /// Campaigns that had spots and room in their daily limit, but none of
+    /// their spots fit what was left of the break.
+    pub left_out: Vec<LeftOutCampaign>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -156,6 +167,9 @@ pub enum WarningCode {
     BreakOffGrid,
     BreakEmpty,
     BreakUnderfilled,
+    /// A campaign was not aired in a break because its spots are longer than
+    /// the time that was left.
+    CampaignLeftOut,
     DayFilled,
     DaySlightlyLong,
     DayTooLong,
@@ -940,6 +954,7 @@ fn build_break(
 
     let spots_sec = cursor - start;
     let gap = duration - spots_sec;
+    let left_out = campaigns_left_out(&input.campaigns, &chosen, usage);
 
     if gap >= MIN_FILLER_SECONDS {
         items.push(filler_item(
@@ -960,9 +975,43 @@ fn build_break(
         spots_sec,
         gap_sec: gap.max(0.0),
         spots: chosen.len(),
+        left_out,
     };
 
     (items, planned)
+}
+
+/// The campaigns that could have aired in the break but had no spot short
+/// enough for the room that remained. Campaigns that reached their daily
+/// limit are not listed: leaving them out is what the limit asks for.
+fn campaigns_left_out(
+    campaigns: &[PlanCampaign],
+    chosen: &[(&PlanCampaign, &PlanSpot)],
+    usage: &Usage,
+) -> Vec<LeftOutCampaign> {
+    campaigns
+        .iter()
+        .filter(|campaign| !chosen.iter().any(|(picked, _)| picked.id == campaign.id))
+        .filter(|campaign| {
+            campaign
+                .max_per_day
+                .is_none_or(|limit| usage.campaign_uses(campaign) < limit)
+        })
+        .filter_map(|campaign| {
+            let shortest = campaign
+                .spots
+                .iter()
+                .map(|spot| spot.duration)
+                .filter(|duration| *duration > 0.0)
+                .min_by(f64::total_cmp)?;
+
+            Some(LeftOutCampaign {
+                campaign_id: campaign.id,
+                name: format!("{} - {}", campaign.advertiser_name, campaign.name),
+                shortest_spot_sec: shortest,
+            })
+        })
+        .collect()
 }
 
 fn filler_item(
@@ -1000,6 +1049,35 @@ fn filler_item(
 }
 
 fn warn_about_break(planned: &PlannedBreak, window: &PlanWindow, warnings: &mut Vec<PlanWarning>) {
+    // A full break that dropped campaigns is only the rotation at work. The
+    // warning is for time that stays empty because a spot is too long for it.
+    if !planned.left_out.is_empty() && planned.gap_sec >= MIN_FILLER_SECONDS {
+        let names: Vec<String> = planned
+            .left_out
+            .iter()
+            .map(|campaign| {
+                format!(
+                    "{} (menor comercial: {})",
+                    campaign.name,
+                    duration_text(campaign.shortest_spot_sec)
+                )
+            })
+            .collect();
+
+        warnings.push(PlanWarning::new(
+            WarningCode::CampaignLeftOut,
+            Severity::Warning,
+            format!(
+                "no intervalo das {}, de {}, sobraram {} e não coube: {}. O comercial é maior que o tempo que sobrou",
+                window.nominal_time,
+                duration_text(f64::from(planned.duration_sec)),
+                duration_text(planned.gap_sec),
+                names.join("; ")
+            ),
+            Some(window.id),
+        ));
+    }
+
     if planned.spots == 0 {
         warnings.push(PlanWarning::new(
             WarningCode::BreakEmpty,
@@ -1452,6 +1530,36 @@ mod tests {
 
         assert!(!kinds(&result).contains(&ItemKind::BreakFiller));
         assert!(!codes(&result).contains(&WarningCode::BreakUnderfilled));
+    }
+
+    #[test]
+    fn a_campaign_that_does_not_fit_is_reported_and_the_break_never_runs_over() {
+        let mut data = input(three_programs(), vec![window(1, "00:20:00", 60)], 3660.0);
+        data.campaigns = vec![
+            campaign(1, 1, vec![spot(1, 45.0)]),
+            campaign(2, 2, vec![spot(2, 30.0)]),
+        ];
+        let result = plan(&data);
+        let planned = &result.breaks[0];
+
+        assert!(planned.spots_sec <= 60.0);
+        assert_eq!(planned.spots, 1);
+        assert_eq!(planned.left_out.len(), 1);
+        assert_eq!(planned.left_out[0].shortest_spot_sec, 30.0);
+        assert!(codes(&result).contains(&WarningCode::CampaignLeftOut));
+    }
+
+    #[test]
+    fn a_campaign_at_its_daily_limit_is_not_reported_as_left_out() {
+        let mut data = input(three_programs(), vec![window(1, "00:20:00", 60)], 3660.0);
+        let mut limited = campaign(1, 1, vec![spot(1, 20.0)]);
+
+        limited.max_per_day = Some(0);
+        data.campaigns = vec![limited, campaign(2, 2, vec![spot(2, 20.0)])];
+        let result = plan(&data);
+
+        assert!(result.breaks[0].left_out.is_empty());
+        assert!(!codes(&result).contains(&WarningCode::CampaignLeftOut));
     }
 
     #[test]

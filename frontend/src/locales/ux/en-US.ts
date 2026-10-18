@@ -17,6 +17,7 @@ export default {
         dashboard: 'Dashboard',
         onair: 'On air',
         commercial: 'Advertising',
+        more: 'More',
         files: 'Files',
         cg: 'Graphics (CG)',
         message: 'On-screen text',

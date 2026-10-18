@@ -129,6 +129,7 @@ watch(() => configStore.i, load)
 <template>
     <div class="space-y-4">
         <p class="text-sm opacity-80">{{ t('commercial.breaks.help') }}</p>
+        <p class="text-sm opacity-80">{{ t('commercial.breaks.lengthHelp') }}</p>
         <WeekdayTabs v-model="weekday" />
 
         <section class="card bg-base-100 shadow p-4">

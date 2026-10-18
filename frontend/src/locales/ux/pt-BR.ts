@@ -17,6 +17,7 @@ export default {
         dashboard: 'Painel',
         onair: 'No ar',
         commercial: 'Publicidade',
+        more: 'Mais',
         files: 'Arquivos',
         cg: 'Gráficos (CG)',
         message: 'Texto na tela',

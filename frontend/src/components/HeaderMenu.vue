@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { onClickOutside } from '@vueuse/core'
 
+import ActionSheet from '@/components/ui/ActionSheet.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
 import type { StatusKind } from '@/components/ui/StatusPill.vue'
 
@@ -35,6 +36,7 @@ const live = useLive()
 
 const moreOpen = ref(false)
 const channelOpen = ref(false)
+const moreSheet = ref(false)
 const moreMenu = ref<HTMLElement>()
 const channelMenu = ref<HTMLElement>()
 
@@ -64,6 +66,7 @@ const items = computed<NavItem[]>(() => {
 
 const mainItems = computed(() => items.value.filter((item) => item.main))
 const moreItems = computed(() => items.value.filter((item) => !item.main))
+const moreActive = computed(() => moreItems.value.some((item) => isActive(item)))
 
 const pill = computed<{ kind: StatusKind; label: string }>(() => {
     const kinds: Record<ChannelState, StatusKind> = {
@@ -248,7 +251,7 @@ onMounted(() => {
     <!-- Barra de baixo do celular -->
     <nav
         class="pb-safe md:hidden fixed bottom-0 inset-x-0 z-30 bg-base-100 border-t border-base-300 grid"
-        :style="{ gridTemplateColumns: `repeat(${mainItems.length}, minmax(0, 1fr))` }"
+        :style="{ gridTemplateColumns: `repeat(${mainItems.length + 1}, minmax(0, 1fr))` }"
         aria-label="Menu"
     >
         <RouterLink
@@ -261,5 +264,27 @@ onMounted(() => {
             <i class="bi text-xl" :class="item.icon" />
             {{ item.label }}
         </RouterLink>
+        <button
+            type="button"
+            class="flex min-h-14 flex-col items-center justify-center gap-0.5 py-2 text-xs"
+            :class="moreActive ? 'text-primary font-semibold' : 'opacity-70'"
+            @click="moreSheet = true"
+        >
+            <i class="bi bi-grid text-xl" />
+            {{ t('nav.more') }}
+        </button>
     </nav>
+
+    <!-- Telas que não cabem na barra: Gráficos, Mensagem, Histórico e Ajustes -->
+    <ActionSheet :show="moreSheet" :title="t('nav.more')" @close="moreSheet = false">
+        <RouterLink
+            v-for="item in moreItems"
+            :key="item.key"
+            :to="channelLink(item.path)"
+            class="flex min-h-12 items-center gap-3 rounded-lg px-3 hover:bg-base-200"
+            :class="isActive(item) && 'bg-primary/15 text-primary font-semibold'"
+        >
+            <i class="bi w-6 text-center text-lg" :class="item.icon" /> {{ item.label }}
+        </RouterLink>
+    </ActionSheet>
 </template>
