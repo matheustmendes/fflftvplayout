@@ -129,7 +129,7 @@ async fn send_notification(
         "2"
     };
     let title = format!(
-        "ffplayout channel {channel} {}",
+        "LFTV channel {channel} {}",
         if fatal { "FATAL" } else { level.as_str() }
     );
 
@@ -338,7 +338,7 @@ mod tests {
         let request = receiver.await.unwrap().to_ascii_lowercase();
         assert!(request.starts_with("post /base/alerts http/1.1\r\n"));
         assert!(request.contains("authorization: bearer secret\r\n"));
-        assert!(request.contains("title: ffplayout channel 7 error\r\n"));
+        assert!(request.contains("title: lftv channel 7 error\r\n"));
         assert!(request.contains("priority: 4\r\n"));
         assert!(request.contains("tags: warning,broadcast\r\n"));
         assert!(request.ends_with("test message"));

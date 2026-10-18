@@ -320,7 +320,7 @@ async fn play_loop(
                 // lets `player()` finish the engine before `main` stops all
                 // remaining channels.
                 info!(channel = id;
-                    "Desktop player window closed; shutting down ffplayout"
+                    "Desktop player window closed; shutting down LFTV"
                 );
                 manager.channel.lock().await.active = false;
                 request_shutdown(&manager.shutdown);

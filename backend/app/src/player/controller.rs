@@ -825,7 +825,7 @@ async fn run_channel(manager: ChannelManager) -> Result<(), ServiceError> {
     let filler_list = manager.filler_list.clone();
     let channel_id = config.general.channel_id;
 
-    debug!(target: Target::All.as_str(), channel = channel_id; "Start ffplayout v{VERSION}, channel: <span class=\"log-number\">{channel_id}</span>");
+    debug!(target: Target::All.as_str(), channel = channel_id; "Start LFTV v{VERSION}, channel: <span class=\"log-number\">{channel_id}</span>");
 
     let need_fill = {
         let list = filler_list.lock().await;

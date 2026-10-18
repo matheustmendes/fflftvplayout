@@ -61,7 +61,7 @@ pub fn validate_output_protocol_options(
 
         if matches!(name, "rw_timeout" | "timeout" | "listen_timeout") {
             return Err(format!(
-                "protocol option {name:?} is managed by ffplayout and cannot be overridden"
+                "protocol option {name:?} is managed by LFTV and cannot be overridden"
             ));
         }
         validate_protocol_option(protocol, &scheme, name, value)?;
@@ -102,9 +102,7 @@ pub fn validate_input_protocol_options(
             "rw_timeout" | "timeout" | "listen_timeout" | "listen" | "rtmp_listen" | "mode"
         ) || (scheme == "rtmp" && matches!(name.as_str(), "rtmp_app" | "rtmp_playpath"))
         {
-            return Err(format!(
-                "live input option {name:?} is managed by ffplayout"
-            ));
+            return Err(format!("live input option {name:?} is managed by LFTV"));
         }
 
         let number =

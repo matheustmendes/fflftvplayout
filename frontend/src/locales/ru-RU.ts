@@ -227,9 +227,9 @@ export default {
         placeholderToken: 'Токен',
         help: 'Help',
         generalHelp:
-            'Sometimes it can happen that a file is corrupt but still playable. This can produce a streaming error for all following files. The only solution in this case is to stop ffplayout and start it again.',
+            'Sometimes it can happen that a file is corrupt but still playable. This can produce a streaming error for all following files. The only solution in this case is to stop LFTV and start it again.',
         stopThreshold:
-            'The threshold stops ffplayout if it is asynchronous in time above this value. A number below 3 can cause unexpected errors.',
+            'The threshold stops LFTV if it is asynchronous in time above this value. A number below 3 can cause unexpected errors.',
         mailHelp: `Send error messages to an email address, such as missing clips, missing or invalid playlist format, etc.. Leave the recipient blank if you don't need this.`,
         mailInterval:
             'The interval refers to the number of seconds until a new email is sent; the value must be in increments of 10 and not lower then 30 seconds.',
@@ -302,19 +302,19 @@ export default {
         encodingSettings: 'Настройки кодирования',
         audioEncoderOptions: 'Расширенные параметры аудиокодера',
         audioEncoderOptionsHelp:
-            'Дополнительные параметры FFmpeg для выбранного аудиокодера. Настройки, управляемые ffplayout, нельзя переопределить; неподдерживаемые имена или значения отклоняются при сохранении.',
+            'Дополнительные параметры FFmpeg для выбранного аудиокодера. Настройки, управляемые LFTV, нельзя переопределить; неподдерживаемые имена или значения отклоняются при сохранении.',
         addAudioOption: 'Добавить параметр аудио',
         audioOptionName: 'Имя параметра',
         audioOptionValue: 'Значение',
         protocolOptions: 'Параметры протокола вывода',
         protocolOptionsHelp:
-            'Транспортные параметры для открытия RTMP-, SRT-, UDP- или поддерживаемого пользовательского сетевого выхода. Примеры: SRT latency=2000000 или UDP pkt_size=1316. Значения, включая парольные фразы, сохраняются и возвращаются без изменений. Тайм-ауты ffplayout переопределить нельзя.',
+            'Транспортные параметры для открытия RTMP-, SRT-, UDP- или поддерживаемого пользовательского сетевого выхода. Примеры: SRT latency=2000000 или UDP pkt_size=1316. Значения, включая парольные фразы, сохраняются и возвращаются без изменений. Тайм-ауты LFTV переопределить нельзя.',
         addProtocolOption: 'Добавить параметр протокола',
         protocolOptionName: 'Имя параметра',
         protocolOptionValue: 'Значение',
         muxerOptions: 'Параметры мультиплексора',
         muxerOptionsHelp:
-            'Дополнительные параметры мультиплексора FFmpeg для этого выхода. Для HLS задайте hls_flags равным program_date_time, чтобы добавить EXT-X-PROGRAM-DATE-TIME. Обязательные для ffplayout параметры остаются включёнными.',
+            'Дополнительные параметры мультиплексора FFmpeg для этого выхода. Для HLS задайте hls_flags равным program_date_time, чтобы добавить EXT-X-PROGRAM-DATE-TIME. Обязательные для LFTV параметры остаются включёнными.',
         addMuxerOption: 'Добавить параметр мультиплексора',
         muxerOptionName: 'Имя параметра',
         muxerOptionValue: 'Значение',
@@ -335,7 +335,7 @@ export default {
         addHlsVariant: 'Добавить вариант',
         remove: 'Удалить',
         restartTile: 'Перезапуск Playout',
-        restartText: 'Перезапустить ffplayout для применения изменений?',
+        restartText: 'Перезапустить LFTV для применения изменений?',
         updatePlayoutSuccess: 'Обновление конфигурации воспроизведения прошло успешно!',
         updatePlayoutFailed: 'Обновление конфигурации воспроизведения не удалось!',
         forbiddenPlaylistPath: 'Доступ запрещен: Папка плейлиста не может быть открыта.',
@@ -343,8 +343,7 @@ export default {
         publicPath: 'Public (HLS) Path',
         playlistPath: 'Playlist Path',
         storagePath: 'Storage Path',
-        sharedStorage:
-            'ffplayout работает внутри контейнера, используйте один и тот же корень хранилища для всех каналов!',
+        sharedStorage: 'LFTV работает внутри контейнера, используйте один и тот же корень хранилища для всех каналов!',
         timezone: 'Timezone',
     },
     setup: {

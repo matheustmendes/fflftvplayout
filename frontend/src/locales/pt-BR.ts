@@ -240,9 +240,9 @@ export default {
         placeholderToken: 'Token',
         help: 'Ajuda',
         generalHelp:
-            'Às vezes pode acontecer de um arquivo estar corrompido, mas ainda ser reproduzível. Isso pode causar um erro de streaming para todos os arquivos seguintes. A única solução nesse caso é parar o ffplayout e reiniciá-lo.',
+            'Às vezes pode acontecer de um arquivo estar corrompido, mas ainda ser reproduzível. Isso pode causar um erro de streaming para todos os arquivos seguintes. A única solução nesse caso é parar o LFTV e reiniciá-lo.',
         stopThreshold:
-            'O limite para o ffplayout se ele estiver fora de sincronia acima deste valor. Um número abaixo de 3 pode causar erros inesperados.',
+            'O limite para o LFTV se ele estiver fora de sincronia acima deste valor. Um número abaixo de 3 pode causar erros inesperados.',
         mailHelp: `Envie mensagens de erro para um endereço de e-mail, como clipes ausentes, formato de playlist ausente ou inválido, etc. Deixe o destinatário em branco se não precisar disso.`,
         mailInterval:
             'O intervalo se refere ao número de segundos até o envio de um novo e-mail; o valor deve ser em incrementos de 10 e não inferior a 30 segundos.',
@@ -320,19 +320,19 @@ export default {
         encodingSettings: 'Configurações do codificador',
         audioEncoderOptions: 'Opções avançadas do codificador de áudio',
         audioEncoderOptionsHelp:
-            'Opções adicionais do FFmpeg para o codificador de áudio selecionado. Configurações gerenciadas pelo ffplayout não podem ser substituídas; nomes ou valores não suportados são rejeitados ao salvar.',
+            'Opções adicionais do FFmpeg para o codificador de áudio selecionado. Configurações gerenciadas pelo LFTV não podem ser substituídas; nomes ou valores não suportados são rejeitados ao salvar.',
         addAudioOption: 'Adicionar opção de áudio',
         audioOptionName: 'Nome da opção',
         audioOptionValue: 'Valor',
         protocolOptions: 'Opções do protocolo de saída',
         protocolOptionsHelp:
-            'Opções de transporte usadas ao abrir uma saída de rede RTMP, SRT, UDP ou personalizada compatível. Exemplos: SRT latency=2000000 ou UDP pkt_size=1316. Os valores, incluindo frases secretas, são armazenados e retornados sem alterações. Os timeouts gerenciados pelo ffplayout não podem ser substituídos.',
+            'Opções de transporte usadas ao abrir uma saída de rede RTMP, SRT, UDP ou personalizada compatível. Exemplos: SRT latency=2000000 ou UDP pkt_size=1316. Os valores, incluindo frases secretas, são armazenados e retornados sem alterações. Os timeouts gerenciados pelo LFTV não podem ser substituídos.',
         addProtocolOption: 'Adicionar opção de protocolo',
         protocolOptionName: 'Nome da opção',
         protocolOptionValue: 'Valor',
         muxerOptions: 'Opções do multiplexador',
         muxerOptionsHelp:
-            'Opções adicionais do multiplexador FFmpeg para esta saída. Para HLS, defina hls_flags como program_date_time para emitir EXT-X-PROGRAM-DATE-TIME. As opções exigidas pelo ffplayout permanecem ativas.',
+            'Opções adicionais do multiplexador FFmpeg para esta saída. Para HLS, defina hls_flags como program_date_time para emitir EXT-X-PROGRAM-DATE-TIME. As opções exigidas pelo LFTV permanecem ativas.',
         addMuxerOption: 'Adicionar opção do multiplexador',
         muxerOptionName: 'Nome da opção',
         muxerOptionValue: 'Valor',
@@ -353,7 +353,7 @@ export default {
         addHlsVariant: 'Adicionar Variante',
         remove: 'Remover',
         restartTile: 'Reiniciar Playout',
-        restartText: 'Reiniciar o ffplayout para aplicar as alterações?',
+        restartText: 'Reiniciar o LFTV para aplicar as alterações?',
         updatePlayoutSuccess: 'Sucesso na atualização da configuração do playout!',
         updatePlayoutFailed: 'Falha na atualização da configuração do playout!',
         forbiddenPlaylistPath: 'Acesso proibido: A pasta da lista de reprodução não pode ser aberta',
@@ -362,7 +362,7 @@ export default {
         playlistPath: 'Playlist Path',
         storagePath: 'Storage Path',
         sharedStorage:
-            'O ffplayout é executado dentro de um contêiner; use a mesma raiz de armazenamento para todos os canais!',
+            'O LFTV é executado dentro de um contêiner; use a mesma raiz de armazenamento para todos os canais!',
         timezone: 'Timezone',
     },
     setup: {

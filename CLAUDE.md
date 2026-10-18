@@ -53,4 +53,6 @@ As regras do backend estão em `backend/AGENTS.md` e são obrigatórias:
 - `migrations/`: SQL. Não editar migrations já publicadas; criar novas.
 - `.dev/`: notas de desenvolvimento e backlog.
 - `deploy/`: instalação na VPS (`install.sh`), relay, nginx, systemd e backup.
+- Marca: o sistema aparece como **LFTV**; binário, serviço e pastas continuam `ffplayout`
+  (ver `.dev/branding.md` antes de renomear qualquer coisa).
 - Agendador e controle de horário: ver `.dev/scheduler.md`.

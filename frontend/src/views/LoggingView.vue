@@ -324,7 +324,7 @@ async function downloadLog() {
     const link = document.createElement('a')
 
     link.href = url
-    link.download = `ffplayout_${id}${date}.log`
+    link.download = `lftv_${id}${date}.log`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

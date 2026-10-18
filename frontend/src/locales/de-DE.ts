@@ -226,9 +226,9 @@ export default {
         placeholderToken: 'Token',
         help: 'Hilfe',
         generalHelp:
-            'Manchmal kann es passieren, dass eine Datei beschädigt ist, aber dennoch abgespielt werden kann. Dies kann zu einem Streaming-Fehler für alle folgenden Dateien führen. Die einzige Lösung in diesem Fall ist, ffplayout zu stoppen und erneut zu starten.',
+            'Manchmal kann es passieren, dass eine Datei beschädigt ist, aber dennoch abgespielt werden kann. Dies kann zu einem Streaming-Fehler für alle folgenden Dateien führen. Die einzige Lösung in diesem Fall ist, LFTV zu stoppen und erneut zu starten.',
         stopThreshold:
-            'Der Schwellenwert stoppt ffplayout, wenn es zeitlich asynchron über diesem Wert ist. Eine Zahl unter 3 kann unerwartete Fehler verursachen.',
+            'Der Schwellenwert stoppt LFTV, wenn es zeitlich asynchron über diesem Wert ist. Eine Zahl unter 3 kann unerwartete Fehler verursachen.',
         mailHelp: `Sende Fehlermeldungen an eine E-Mail-Adresse, wie z.B. fehlende Clips, fehlendes oder ungültiges Playlist-Format usw. Lass den Empfänger leer, wenn du dies nicht benötigst.`,
         mailInterval:
             'Das Intervall bezieht sich auf die Anzahl der Sekunden, bis eine neue E-Mail gesendet wird; der Wert muss in 10er-Schritten und nicht unter 30 Sekunden liegen.',
@@ -306,19 +306,19 @@ export default {
         encodingSettings: 'Encoder-Einstellungen',
         audioEncoderOptions: 'Erweiterte Audio-Encoder-Optionen',
         audioEncoderOptionsHelp:
-            'Zusätzliche FFmpeg-Optionen für den ausgewählten Audio-Encoder. Von ffplayout verwaltete Einstellungen können nicht überschrieben werden; nicht unterstützte Namen oder Werte werden beim Speichern abgelehnt.',
+            'Zusätzliche FFmpeg-Optionen für den ausgewählten Audio-Encoder. Von LFTV verwaltete Einstellungen können nicht überschrieben werden; nicht unterstützte Namen oder Werte werden beim Speichern abgelehnt.',
         addAudioOption: 'Audio-Option hinzufügen',
         audioOptionName: 'Optionsname',
         audioOptionValue: 'Wert',
         protocolOptions: 'Ausgabeprotokoll-Optionen',
         protocolOptionsHelp:
-            'Transportoptionen zum Öffnen einer RTMP-, SRT-, UDP- oder unterstützten benutzerdefinierten Netzwerkausgabe. Beispiele: SRT latency=2000000 oder UDP pkt_size=1316. Werte einschließlich Passphrasen werden unverändert gespeichert und zurückgegeben. Von ffplayout verwaltete Timeouts können nicht überschrieben werden.',
+            'Transportoptionen zum Öffnen einer RTMP-, SRT-, UDP- oder unterstützten benutzerdefinierten Netzwerkausgabe. Beispiele: SRT latency=2000000 oder UDP pkt_size=1316. Werte einschließlich Passphrasen werden unverändert gespeichert und zurückgegeben. Von LFTV verwaltete Timeouts können nicht überschrieben werden.',
         addProtocolOption: 'Protokolloption hinzufügen',
         protocolOptionName: 'Optionsname',
         protocolOptionValue: 'Wert',
         muxerOptions: 'Muxer-Optionen',
         muxerOptionsHelp:
-            'Zusätzliche FFmpeg-Muxer-Optionen für diese Ausgabe. Für HLS hls_flags mit program_date_time setzen, um EXT-X-PROGRAM-DATE-TIME auszugeben. Von ffplayout benötigte Optionen bleiben erzwungen.',
+            'Zusätzliche FFmpeg-Muxer-Optionen für diese Ausgabe. Für HLS hls_flags mit program_date_time setzen, um EXT-X-PROGRAM-DATE-TIME auszugeben. Von LFTV benötigte Optionen bleiben erzwungen.',
         addMuxerOption: 'Muxer-Option hinzufügen',
         muxerOptionName: 'Optionsname',
         muxerOptionValue: 'Wert',
@@ -339,7 +339,7 @@ export default {
         addHlsVariant: 'Variante hinzufügen',
         remove: 'Entfernen',
         restartTile: 'Playout neustarten',
-        restartText: 'ffplayout neustarten um Einstellungen anzuwenden?',
+        restartText: 'LFTV neustarten um Einstellungen anzuwenden?',
         updatePlayoutSuccess: 'Update der Playout-Konfiguration erfolgreich!',
         updatePlayoutFailed: 'Update playout config fehlgeschlagen!',
         forbiddenPlaylistPath: 'Zugriff untersagt: Playlist-Ordner kann nicht geöffnet werden.',
@@ -348,7 +348,7 @@ export default {
         playlistPath: 'Wiedergabelistenpfad',
         storagePath: 'Speicherpfad',
         sharedStorage:
-            'ffplayout läuft innerhalb eines Containers, verwenden Sie den gleichen Speicherstamm für alle Kanäle!',
+            'LFTV läuft innerhalb eines Containers, verwenden Sie den gleichen Speicherstamm für alle Kanäle!',
         timezone: 'Zeitzone',
     },
     setup: {

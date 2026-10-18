@@ -85,7 +85,7 @@ const RECORDING_CHANNEL_CAPACITY: usize = 64;
 const RECORDING_OVERLOAD_LOG_INTERVAL: Duration = Duration::from_secs(30);
 const DESKTOP_DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 
-const DESKTOP_WINDOW_TITLE: &str = "ffplayout";
+const DESKTOP_WINDOW_TITLE: &str = "LFTV";
 
 #[cfg(target_os = "linux")]
 const DESKTOP_APPLICATION_ID: &str = "ffplayout";

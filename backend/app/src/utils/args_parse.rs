@@ -29,7 +29,7 @@ const DEFAULT_LISTEN_ADDRESS: &str = "127.0.0.1:8787";
 
 #[derive(Parser, Debug, Default, Clone)]
 #[clap(version,
-    about = "ffplayout - 24/7 broadcasting solution",
+    about = "LFTV - 24/7 broadcasting solution",
     long_about = Some("ffplayout - 24/7 broadcasting solution\n
 Stream dynamic playlists or folder contents with the power of ffmpeg.
 The target can be an HLS playlist, rtmp/srt/udp server, desktop player

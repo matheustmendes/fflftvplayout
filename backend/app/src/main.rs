@@ -203,7 +203,7 @@ async fn async_main() -> Result<(), ProcessError> {
         #[cfg(not(debug_assertions))]
         let app = app.merge(admin_ui_routes());
 
-        info!(target: Target::Console.as_str(), "Running ffplayout, listen on http://{conn}");
+        info!(target: Target::Console.as_str(), "Running LFTV, listen on http://{conn}");
 
         tokio::select! {
             result = axum::serve(listener, app) => {

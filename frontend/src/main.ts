@@ -16,7 +16,7 @@ const head = createHead({
     init: [
         {
             title: 'System',
-            titleTemplate: '%s | ffplayout',
+            titleTemplate: '%s | LFTV',
             htmlAttrs: { lang: 'en' },
         },
     ],

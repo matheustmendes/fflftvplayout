@@ -363,7 +363,7 @@ fn validate_hls_compatibility(options: &BTreeMap<String, String>) -> Result<(), 
     for (key, value) in options {
         if !HLS_COMPATIBLE_OPTIONS.contains(&key.as_str()) {
             return Err(format!(
-                "HLS muxer option {key:?} is not compatible with ffplayout's segment management"
+                "HLS muxer option {key:?} is not compatible with LFTV's segment management"
             ));
         }
 
@@ -371,7 +371,7 @@ fn validate_hls_compatibility(options: &BTreeMap<String, String>) -> Result<(), 
             for flag in value.split('+').filter(|flag| !flag.is_empty()) {
                 if !HLS_COMPATIBLE_FLAGS.contains(&flag) {
                     return Err(format!(
-                        "HLS flag {flag:?} is not compatible with ffplayout's segment management"
+                        "HLS flag {flag:?} is not compatible with LFTV's segment management"
                     ));
                 }
             }

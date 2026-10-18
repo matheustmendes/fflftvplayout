@@ -135,7 +135,7 @@ onMounted(() => {
     <nav class="bg-base-100 shadow-md" aria-label="Menu">
         <div class="flex items-center gap-2 min-h-14 px-2 sm:px-4">
             <RouterLink :to="channelLink('/')" class="shrink-0 p-1" :title="t('nav.dashboard')">
-                <img src="@/assets/images/ffplayout-small.png" alt="Logo" width="32" height="32" />
+                <img src="@/assets/images/lftv-small.png" alt="Logo" width="32" height="32" />
             </RouterLink>
 
             <!-- Menu do computador -->

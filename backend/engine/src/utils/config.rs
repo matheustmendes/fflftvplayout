@@ -959,7 +959,7 @@ pub(crate) fn apply_audio_encoder_options(
 
         if MANAGED_AUDIO_OPTIONS.contains(&key.as_str()) {
             return Err(format!(
-                "audio option {key:?} is managed by ffplayout and cannot be overridden"
+                "audio option {key:?} is managed by LFTV and cannot be overridden"
             ));
         }
 
@@ -1883,7 +1883,7 @@ mod tests {
         assert!(
             validate_audio_options("aac", &options, 48_000, 128_000)
                 .unwrap_err()
-                .contains("managed by ffplayout")
+                .contains("managed by LFTV")
         );
     }
 

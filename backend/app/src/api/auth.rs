@@ -255,7 +255,7 @@ fn mail_body(verification_code: &str) -> String {
         <div style="padding: 2px 15px;">
             <div>
                 <h2>Your verification code</h2>
-                <p>Enter this code in the <b>ffplayout</b> verification step to finish signing in:</p>
+                <p>Enter this code in the <b>LFTV</b> verification step to finish signing in:</p>
                 <p style="padding: 5px; font-size: 20px; font-weight: bold;">{verification_code}</p>
                 <p>This code expires in 5 minutes. If you did not request it, you can ignore this email.</p>
                 <div>
@@ -357,7 +357,7 @@ pub async fn login(
                     let text = mail_body(&verification_code);
                     let mail_config = Mail {
                         show: true,
-                        subject: format!("Your ffplayout code is: {verification_code}"),
+                        subject: format!("Your LFTV code is: {verification_code}"),
                         smtp_server: config.smtp_server.clone(),
                         smtp_starttls: config.smtp_starttls,
                         smtp_user: config.smtp_user.clone(),

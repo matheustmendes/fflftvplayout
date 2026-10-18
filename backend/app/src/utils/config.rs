@@ -1532,12 +1532,7 @@ mod output_tests {
         output
             .protocol_options
             .insert("rw_timeout".to_string(), "0".to_string());
-        assert!(
-            output
-                .validate()
-                .unwrap_err()
-                .contains("managed by ffplayout")
-        );
+        assert!(output.validate().unwrap_err().contains("managed by LFTV"));
         output.protocol_options.remove("rw_timeout");
         output.stream_url = "srt://localhost:9000?latency=20000".to_string();
         assert!(
