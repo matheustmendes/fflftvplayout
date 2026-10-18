@@ -175,7 +175,7 @@ export default {
         help: 'Breaks are the times when spots run. They start at the program change closest to the requested time.',
         lengthHelp:
             'The length is a ceiling. Spots are picked to fit in it and the break never runs over: what is left is filled, and a spot that does not fit is left out, with a warning when the day is built.',
-        total:         total: 'Total break time: {time}',
+        total: 'Total break time: {time}',
         empty: 'No breaks on this day.',
         time: 'Time',
         length: 'Length',
