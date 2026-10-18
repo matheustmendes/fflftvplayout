@@ -147,8 +147,9 @@ function submit() {
         </div>
 
         <div class="grid gap-5 lg:grid-cols-2">
-            <div class="space-y-5">
-                <section class="card bg-base-100 shadow p-4 space-y-3">
+            <!-- No celular as três etapas são uma coluna só, com a tela de teste logo depois de "O que mostrar". -->
+            <div class="contents lg:block lg:space-y-5">
+                <section class="card bg-base-100 shadow p-4 space-y-3 order-1 lg:order-none">
                     <h3 class="font-bold">{{ t('cg.editor.stepWhat') }}</h3>
 
                     <label class="form-control">
@@ -215,7 +216,7 @@ function submit() {
                     </div>
                 </section>
 
-                <section class="card bg-base-100 shadow p-4 space-y-3">
+                <section class="card bg-base-100 shadow p-4 space-y-3 order-3 lg:order-none">
                     <h3 class="font-bold">{{ t('cg.editor.stepLook') }}</h3>
 
                     <!-- Letters above 30% of the picture are rare: the slider stays in the useful range
@@ -322,7 +323,7 @@ function submit() {
                 </section>
             </div>
 
-            <section class="card bg-base-100 shadow p-4 space-y-3 self-start lg:sticky lg:top-4">
+            <section class="card bg-base-100 shadow p-4 space-y-3 self-start order-2 lg:order-none lg:sticky lg:top-4">
                 <h3 class="font-bold">{{ t('cg.editor.stepWhere') }}</h3>
                 <p class="text-sm opacity-70">{{ t('cg.editor.stageHelp') }}</p>
                 <CgStage :cg="draft" @move="move" />

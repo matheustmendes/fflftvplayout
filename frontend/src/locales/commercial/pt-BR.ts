@@ -192,6 +192,7 @@ export default {
         removeText: 'O intervalo das {time} será removido.',
     },
     grid: {
+        actions: 'Ações do programa',
         fixedAdd: 'Hora marcada',
         fixedHelp:
             'Use quando este programa precisa entrar em um horário exato. O sistema completa o tempo que sobrar com enchimento e, se o programa anterior passar do horário, avisa aqui e na hora de montar o dia.',

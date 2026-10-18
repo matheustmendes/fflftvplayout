@@ -22,6 +22,10 @@ const DEFAULT_FILE: &str = "index.html";
 #[cfg(not(debug_assertions))]
 const ROOT: &str = "";
 
+/// The folder of the files whose names carry a content hash (the build of the frontend).
+#[cfg(not(debug_assertions))]
+const HASHED_ASSETS: &str = "assets/";
+
 #[cfg(not(debug_assertions))]
 fn serve_file(
     file: &File,
@@ -60,11 +64,22 @@ async fn serve_asset(path: Option<Path<String>>) -> impl IntoResponse {
     };
 
     if let Some(file) = FRONTEND_DIR.get_file(&path) {
-        let mime = mime_guess::from_path(&path).first_or_octet_stream();
+        // The manifest of the installable app has a type of its own that some tables do not know.
+        let mime = if path.ends_with(".webmanifest") {
+            "application/manifest+json"
+                .parse()
+                .unwrap_or(mime::APPLICATION_JSON)
+        } else {
+            mime_guess::from_path(&path).first_or_octet_stream()
+        };
         let cache = if mime == mime::TEXT_HTML {
             Duration::seconds(0)
-        } else {
+        } else if path.starts_with(HASHED_ASSETS) {
+            // The file name carries a hash of its content, so it never changes under that name.
             Duration::days(365)
+        } else {
+            // Icons, manifest and the like keep their names: a new logo must show up soon.
+            Duration::hours(1)
         };
         return serve_file(file, Some(mime), cache, None);
     }

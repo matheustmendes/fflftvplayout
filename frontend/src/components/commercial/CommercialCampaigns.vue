@@ -193,7 +193,10 @@ watch(() => configStore.i, load)
         </div>
 
         <section class="card bg-base-100 shadow p-4">
-            <button class="flex items-center gap-2 font-bold text-left" @click="showAdvertisers = !showAdvertisers">
+            <button
+                class="flex min-h-10 items-center gap-2 font-bold text-left"
+                @click="showAdvertisers = !showAdvertisers"
+            >
                 <i class="bi" :class="showAdvertisers ? 'bi-chevron-down' : 'bi-chevron-right'" />
                 {{ t('commercial.advertisers.title') }} ({{ advertisers.length }})
             </button>

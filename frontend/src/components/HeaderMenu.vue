@@ -178,7 +178,11 @@ onMounted(() => {
             </div>
 
             <!-- Estado do canal, sempre visível -->
-            <RouterLink :to="channelLink('/')" :title="t(`live.${live.state}_help`)">
+            <RouterLink
+                :to="channelLink('/')"
+                :title="t(`live.${live.state}_help`)"
+                class="inline-flex min-h-10 items-center"
+            >
                 <StatusPill :kind="pill.kind" :label="pill.label" />
             </RouterLink>
 

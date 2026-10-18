@@ -165,6 +165,8 @@ export default {
         title: 'On air',
         subtitle:
             'Follow what is on the air and the order of the programs of the day. To change the order, drag the programs.',
+        subtitleTouch:
+            'Follow what is on the air and the order of the programs of the day. To change the order, tap the three dots of the program.',
         dayList: 'Schedule of the day',
         prevDay: 'Previous day',
         nextDay: 'Next day',
@@ -190,6 +192,12 @@ export default {
             delete: 'Remove',
             now: 'ON AIR',
             spot: 'commercial',
+        },
+        item: {
+            actions: 'Item actions',
+            up: 'Move up',
+            down: 'Move down',
+            remove: 'Remove from the day',
         },
         empty: {
             title: 'This day has no schedule yet',

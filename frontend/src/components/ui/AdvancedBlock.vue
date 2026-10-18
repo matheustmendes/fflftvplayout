@@ -11,7 +11,7 @@ const open = ref(props.startOpen)
     <section class="card bg-base-100 shadow">
         <button
             type="button"
-            class="flex w-full items-center gap-3 p-4 text-start rounded-2xl hover:bg-base-200/60"
+            class="flex min-h-14 w-full items-center gap-3 p-4 text-start rounded-2xl hover:bg-base-200/60"
             :aria-expanded="open"
             @click="open = !open"
         >

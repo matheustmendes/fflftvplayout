@@ -7,6 +7,7 @@ import StorageFilePicker from '@/components/commercial/StorageFilePicker.vue'
 import WeekdayTabs from '@/components/commercial/WeekdayTabs.vue'
 import type { PickedFile } from '@/components/commercial/StorageFilePicker.vue'
 
+import ActionSheet from '@/components/ui/ActionSheet.vue'
 import { friendlyError } from '@/composables/friendlyError'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
@@ -38,6 +39,9 @@ const showCopy = ref(false)
 const pendingDay = ref<number | null>(null)
 const dragFrom = ref<number | null>(null)
 const dragOver = ref<number | null>(null)
+// Tela de toque: arrastar não funciona com o dedo, então há botões e uma folha de ações.
+const touchScreen = window.matchMedia('(pointer: coarse)').matches
+const sheetFor = ref<number | null>(null)
 
 const dirty = computed(() => JSON.stringify(items.value) !== saved.value)
 const totalSec = computed(() => timeline.value.end - dayStart.value)
@@ -263,12 +267,12 @@ watch(() => configStore.i, load)
                     <li
                         v-for="(item, index) in items"
                         :key="`${index}-${item.source}`"
-                        class="flex items-center gap-2 py-1.5 rounded transition-colors"
+                        class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded py-2 transition-colors sm:flex-nowrap sm:py-1.5"
                         :class="[
                             dragOver === index && dragFrom !== index && 'bg-primary/10',
                             dragFrom === index && 'opacity-40',
                         ]"
-                        :draggable="canManage"
+                        :draggable="canManage && !touchScreen"
                         @dragstart="dragFrom = index"
                         @dragend=";((dragFrom = null), (dragOver = null))"
                         @dragover.prevent="dragOver = index"
@@ -297,59 +301,96 @@ watch(() => configStore.i, load)
                             />
                             {{ clock(starts[index] ?? 0) }}
                         </span>
+                        <!-- No celular o nome vai para uma linha só dele; no computador fica entre a hora e a duração. -->
                         <input
                             v-if="canManage"
                             v-model="item.title"
-                            class="input input-xs grow min-w-0"
+                            class="input input-xs order-last w-full min-w-0 sm:order-none sm:w-auto sm:grow"
                             maxlength="100"
                         />
-                        <span v-else class="grow truncate">{{ item.title }}</span>
-                        <span class="w-16 text-right tabular-nums opacity-70">{{ formatDuration(item.duration) }}</span>
+                        <span v-else class="order-last w-full truncate sm:order-none sm:w-auto sm:grow">
+                            {{ item.title }}
+                        </span>
+                        <span class="ms-auto w-16 text-right tabular-nums opacity-70 sm:ms-0">
+                            {{ formatDuration(item.duration) }}
+                        </span>
                         <template v-if="canManage">
-                            <span v-if="item.fixed" class="flex items-center gap-1">
+                            <!-- Computador: hora marcada, subir, descer e tirar, na própria linha. -->
+                            <span class="hidden items-center gap-1 sm:flex">
+                                <span v-if="item.fixed" class="flex items-center gap-1">
+                                    <input
+                                        v-model="item.fixed"
+                                        type="time"
+                                        class="input input-xs w-24"
+                                        :aria-label="t('commercial.grid.fixedTime')"
+                                    />
+                                    <button
+                                        class="btn btn-xs btn-ghost"
+                                        :title="t('commercial.grid.fixedClear')"
+                                        :aria-label="t('commercial.grid.fixedClear')"
+                                        @click="item.fixed = ''"
+                                    >
+                                        <i class="bi bi-alarm-fill text-accent" />
+                                    </button>
+                                </span>
+                                <button
+                                    v-else
+                                    class="btn btn-xs btn-ghost"
+                                    :title="t('commercial.grid.fixedHelp')"
+                                    :aria-label="t('commercial.grid.fixedAdd')"
+                                    @click="item.fixed = clock(starts[index] ?? 0).slice(0, 5)"
+                                >
+                                    <i class="bi bi-alarm" />
+                                </button>
+                                <button
+                                    class="btn btn-xs btn-ghost"
+                                    :disabled="index === 0"
+                                    :title="t('commercial.grid.up')"
+                                    @click="move(index, -1)"
+                                >
+                                    <i class="bi bi-arrow-up" />
+                                </button>
+                                <button
+                                    class="btn btn-xs btn-ghost"
+                                    :disabled="index === items.length - 1"
+                                    :title="t('commercial.grid.down')"
+                                    @click="move(index, 1)"
+                                >
+                                    <i class="bi bi-arrow-down" />
+                                </button>
+                                <button
+                                    class="btn btn-xs btn-ghost"
+                                    :title="t('commercial.remove')"
+                                    @click="remove(index)"
+                                >
+                                    <i class="bi bi-x-lg" />
+                                </button>
+                            </span>
+                            <!-- Celular: as mesmas ações numa folha que sobe de baixo. -->
+                            <button
+                                class="btn btn-ghost btn-square btn-sm sm:hidden"
+                                :aria-label="t('commercial.grid.actions')"
+                                @click="sheetFor = index"
+                            >
+                                <i class="bi bi-three-dots-vertical text-lg" />
+                            </button>
+                            <span v-if="item.fixed" class="order-last flex w-full items-center gap-2 sm:hidden">
+                                <i class="bi bi-alarm-fill text-accent" />
+                                <span class="text-sm opacity-70">{{ t('commercial.grid.fixedTime') }}</span>
                                 <input
                                     v-model="item.fixed"
                                     type="time"
-                                    class="input input-xs w-24"
+                                    class="input input-sm w-32"
                                     :aria-label="t('commercial.grid.fixedTime')"
                                 />
                                 <button
-                                    class="btn btn-xs btn-ghost"
-                                    :title="t('commercial.grid.fixedClear')"
+                                    class="btn btn-ghost btn-square btn-sm"
                                     :aria-label="t('commercial.grid.fixedClear')"
                                     @click="item.fixed = ''"
                                 >
-                                    <i class="bi bi-alarm-fill text-accent" />
+                                    <i class="bi bi-x-lg" />
                                 </button>
                             </span>
-                            <button
-                                v-else
-                                class="btn btn-xs btn-ghost"
-                                :title="t('commercial.grid.fixedHelp')"
-                                :aria-label="t('commercial.grid.fixedAdd')"
-                                @click="item.fixed = clock(starts[index] ?? 0).slice(0, 5)"
-                            >
-                                <i class="bi bi-alarm" />
-                            </button>
-                            <button
-                                class="btn btn-xs btn-ghost"
-                                :disabled="index === 0"
-                                :title="t('commercial.grid.up')"
-                                @click="move(index, -1)"
-                            >
-                                <i class="bi bi-arrow-up" />
-                            </button>
-                            <button
-                                class="btn btn-xs btn-ghost"
-                                :disabled="index === items.length - 1"
-                                :title="t('commercial.grid.down')"
-                                @click="move(index, 1)"
-                            >
-                                <i class="bi bi-arrow-down" />
-                            </button>
-                            <button class="btn btn-xs btn-ghost" :title="t('commercial.remove')" @click="remove(index)">
-                                <i class="bi bi-x-lg" />
-                            </button>
                         </template>
                     </li>
                 </ol>
@@ -369,6 +410,42 @@ watch(() => configStore.i, load)
             </div>
             <p class="text-xs opacity-60 mt-3">{{ t('commercial.grid.nextStep') }}</p>
         </section>
+
+        <ActionSheet
+            :show="sheetFor !== null"
+            :title="sheetFor !== null ? items[sheetFor]?.title : ''"
+            @close="sheetFor = null"
+        >
+            <template v-if="sheetFor !== null && items[sheetFor]">
+                <button
+                    v-if="items[sheetFor]!.fixed"
+                    class="btn btn-ghost justify-start"
+                    @click="items[sheetFor!]!.fixed = ''"
+                >
+                    <i class="bi bi-alarm-fill text-accent" /> {{ t('commercial.grid.fixedClear') }}
+                </button>
+                <button
+                    v-else
+                    class="btn btn-ghost justify-start"
+                    @click="items[sheetFor!]!.fixed = clock(starts[sheetFor!] ?? 0).slice(0, 5)"
+                >
+                    <i class="bi bi-alarm" /> {{ t('commercial.grid.fixedAdd') }}
+                </button>
+                <button class="btn btn-ghost justify-start" :disabled="sheetFor === 0" @click="move(sheetFor, -1)">
+                    <i class="bi bi-arrow-up" /> {{ t('commercial.grid.up') }}
+                </button>
+                <button
+                    class="btn btn-ghost justify-start"
+                    :disabled="sheetFor === items.length - 1"
+                    @click="move(sheetFor, 1)"
+                >
+                    <i class="bi bi-arrow-down" /> {{ t('commercial.grid.down') }}
+                </button>
+                <button class="btn btn-ghost justify-start text-error" @click="remove(sheetFor)">
+                    <i class="bi bi-x-lg" /> {{ t('commercial.remove') }}
+                </button>
+            </template>
+        </ActionSheet>
 
         <StorageFilePicker :show="showPicker" @close="showPicker = false" @pick="addPicked" />
         <GenericModal

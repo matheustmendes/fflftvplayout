@@ -166,7 +166,7 @@ const graphicsSeconds = computed(() =>
             </div>
             <p v-if="!report.days.length" class="opacity-70">{{ t('commercial.reports.none') }}</p>
             <div v-else class="overflow-x-auto">
-                <table class="table table-sm">
+                <table class="table table-sm table-cards">
                     <thead>
                         <tr>
                             <th>{{ t('commercial.reports.day') }}</th>
@@ -179,20 +179,22 @@ const graphicsSeconds = computed(() =>
                     </thead>
                     <tbody>
                         <tr v-for="day in report.days" :key="day.date">
-                            <td>{{ shortDate(day.date) }}</td>
-                            <td>{{ day.planned }}</td>
-                            <td>{{ day.aired }}</td>
-                            <td>{{ day.partial }}</td>
-                            <td :class="day.missed > 0 && 'text-error'">{{ day.missed }}</td>
-                            <td>{{ day.pending }}</td>
+                            <td :data-label="t('commercial.reports.day')">{{ shortDate(day.date) }}</td>
+                            <td :data-label="t('commercial.reports.planned')">{{ day.planned }}</td>
+                            <td :data-label="t('commercial.reports.aired')">{{ day.aired }}</td>
+                            <td :data-label="t('commercial.reports.partial')">{{ day.partial }}</td>
+                            <td :data-label="t('commercial.reports.missed')" :class="day.missed > 0 && 'text-error'">
+                                {{ day.missed }}
+                            </td>
+                            <td :data-label="t('commercial.reports.pending')">{{ day.pending }}</td>
                         </tr>
                         <tr class="font-bold">
-                            <td>{{ t('commercial.reports.total') }}</td>
-                            <td>{{ report.totals.planned }}</td>
-                            <td>{{ report.totals.aired }}</td>
-                            <td>{{ report.totals.partial }}</td>
-                            <td>{{ report.totals.missed }}</td>
-                            <td>{{ report.totals.pending }}</td>
+                            <td :data-label="t('commercial.reports.day')">{{ t('commercial.reports.total') }}</td>
+                            <td :data-label="t('commercial.reports.planned')">{{ report.totals.planned }}</td>
+                            <td :data-label="t('commercial.reports.aired')">{{ report.totals.aired }}</td>
+                            <td :data-label="t('commercial.reports.partial')">{{ report.totals.partial }}</td>
+                            <td :data-label="t('commercial.reports.missed')">{{ report.totals.missed }}</td>
+                            <td :data-label="t('commercial.reports.pending')">{{ report.totals.pending }}</td>
                         </tr>
                     </tbody>
                 </table>

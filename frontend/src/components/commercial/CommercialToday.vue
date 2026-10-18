@@ -239,7 +239,7 @@ watch(() => configStore.i, load)
             <h2 class="font-bold text-lg mb-2">{{ t('commercial.today.breaks') }}</h2>
             <p v-if="!preview.plan.breaks.length" class="opacity-70">{{ t('commercial.today.noBreaks') }}</p>
             <div v-else class="overflow-x-auto">
-                <table class="table table-sm">
+                <table class="table table-sm table-cards">
                     <thead>
                         <tr>
                             <th>{{ t('commercial.today.asked') }}</th>
@@ -251,11 +251,16 @@ watch(() => configStore.i, load)
                     </thead>
                     <tbody>
                         <tr v-for="item in preview.plan.breaks" :key="item.window_id">
-                            <td>{{ item.nominal_time }}</td>
-                            <td>{{ item.start_time }}</td>
-                            <td>{{ formatDuration(item.duration_sec) }}</td>
-                            <td>{{ item.spots }} ({{ formatDuration(item.spots_sec) }})</td>
-                            <td :class="item.gap_sec > 5 && 'text-warning font-semibold'">
+                            <td :data-label="t('commercial.today.asked')">{{ item.nominal_time }}</td>
+                            <td :data-label="t('commercial.today.startsAt')">{{ item.start_time }}</td>
+                            <td :data-label="t('commercial.today.length')">{{ formatDuration(item.duration_sec) }}</td>
+                            <td :data-label="t('commercial.today.spots')">
+                                {{ item.spots }} ({{ formatDuration(item.spots_sec) }})
+                            </td>
+                            <td
+                                :data-label="t('commercial.today.gap')"
+                                :class="item.gap_sec > 5 && 'text-warning font-semibold'"
+                            >
                                 {{ formatDuration(item.gap_sec) }}
                             </td>
                         </tr>
@@ -274,7 +279,7 @@ watch(() => configStore.i, load)
             </h2>
             <p v-if="!spotRows.length" class="opacity-70">{{ t('commercial.today.noAirings') }}</p>
             <div v-else class="overflow-x-auto">
-                <table class="table table-sm">
+                <table class="table table-sm table-cards">
                     <thead>
                         <tr>
                             <th>{{ t('commercial.today.planned') }}</th>
@@ -286,11 +291,15 @@ watch(() => configStore.i, load)
                     </thead>
                     <tbody>
                         <tr v-for="row in spotRows" :key="row.id">
-                            <td>{{ clockIn(row.planned_start, timezone) }}</td>
-                            <td>{{ clockIn(row.actual_start, timezone) }}</td>
-                            <td>{{ row.spot_title }}</td>
-                            <td>{{ row.advertiser_name }} / {{ row.campaign_name }}</td>
-                            <td>
+                            <td :data-label="t('commercial.today.planned')">
+                                {{ clockIn(row.planned_start, timezone) }}
+                            </td>
+                            <td :data-label="t('commercial.today.real')">{{ clockIn(row.actual_start, timezone) }}</td>
+                            <td :data-label="t('commercial.spots.title')">{{ row.spot_title }}</td>
+                            <td :data-label="t('commercial.campaigns.campaign')">
+                                {{ row.advertiser_name }} / {{ row.campaign_name }}
+                            </td>
+                            <td :data-label="t('commercial.today.result')">
                                 <span class="badge badge-sm" :class="resultClass(row.result)">
                                     {{ t(`commercial.result.${row.result}`) }}
                                 </span>

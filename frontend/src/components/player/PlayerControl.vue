@@ -415,12 +415,16 @@ function answer(confirmed: boolean) {
 
                 <!-- Botões grandes, com texto -->
                 <div class="grid grid-cols-2 gap-2">
-                    <button v-if="!isRunning" class="btn btn-primary btn-lg col-span-2" @click="ask('start')">
+                    <button
+                        v-if="!isRunning"
+                        class="btn btn-primary btn-lg col-span-2 h-auto min-h-14 py-2"
+                        @click="ask('start')"
+                    >
                         <i class="bi bi-play-fill text-3xl" /> {{ t('player2.start') }}
                     </button>
                     <template v-else>
                         <button
-                            class="btn btn-primary btn-lg"
+                            class="btn btn-primary btn-lg h-auto min-h-14 whitespace-normal py-2 leading-tight"
                             :disabled="playlistStore.ingestRuns"
                             :title="playlistStore.ingestRuns ? t('control.navigationDisabledLive') : undefined"
                             @click="ask('next')"
@@ -428,7 +432,7 @@ function answer(confirmed: boolean) {
                             <i class="bi bi-skip-forward-fill text-2xl" /> {{ t('player2.next_btn') }}
                         </button>
                         <button
-                            class="btn btn-lg"
+                            class="btn btn-lg h-auto min-h-14 whitespace-normal py-2 leading-tight"
                             :disabled="playlistStore.ingestRuns"
                             :title="playlistStore.ingestRuns ? t('control.navigationDisabledLive') : undefined"
                             @click="ask('back')"
@@ -437,10 +441,16 @@ function answer(confirmed: boolean) {
                         </button>
                     </template>
                     <template v-if="canManage">
-                        <button class="btn" @click="ask('restart')">
+                        <button
+                            class="btn h-auto min-h-12 whitespace-normal py-2 leading-tight"
+                            @click="ask('restart')"
+                        >
                             <i class="bi bi-arrow-clockwise" /> {{ t('player2.restart') }}
                         </button>
-                        <button class="btn btn-error btn-outline" @click="ask('stop')">
+                        <button
+                            class="btn btn-error btn-outline h-auto min-h-12 whitespace-normal py-2 leading-tight"
+                            @click="ask('stop')"
+                        >
                             <i class="bi bi-stop-fill" /> {{ t('player2.stop') }}
                         </button>
                     </template>
@@ -480,7 +490,9 @@ function answer(confirmed: boolean) {
                 </div>
 
                 <details v-if="canManage" class="text-sm">
-                    <summary class="cursor-pointer opacity-70">{{ t('player2.more') }}</summary>
+                    <summary class="flex min-h-10 cursor-pointer items-center opacity-70">
+                        {{ t('player2.more') }}
+                    </summary>
                     <div class="mt-2 flex flex-wrap items-center gap-2">
                         <button class="btn btn-sm" :disabled="playlistStore.ingestRuns" @click="ask('reset')">
                             <i class="bi bi-arrow-repeat" /> {{ t('player2.reset') }}

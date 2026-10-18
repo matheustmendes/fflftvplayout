@@ -132,3 +132,34 @@ Ordem sugerida pelo uso: Grade, Texto na tela, Gráficos (CG), Campanhas, Interv
 ## 5. Ordem recomendada
 F0 → F1 → F2 (estimativa: poucos dias de trabalho) → conferir no celular da equipe → decidir F3
 a F5 com base no que eles realmente tentarem fazer.
+
+## 6. Resultado (18/10/2026)
+
+Feito de uma vez, para iPhone e Android. Medido de novo em 390 x 844 com
+`scripts/dev/mobile-audit.mjs`: **0 telas estouram, 0 alvos abaixo de 40 px e 0 textos abaixo de
+12 px nas 20 telas** (antes: 28 alvos e 32 textos em "No ar", 27 alvos na Grade).
+
+| Fase | O que entrou |
+|---|---|
+| F0 | CSS só para tela de toque (alvos de 40 px, campos de 16 px para o iPhone não dar zoom, `touch-action`), `viewport-fit=cover`, área segura na barra de baixo e na barra "Salvar", `dvh` no lugar de `vh`, rolagem até o campo acima do teclado, sem "puxar para recarregar" no Android. |
+| F1 | Botões grandes de ligar, parar, reiniciar e pular com texto em duas linhas (antes cortava); linhas da playlist do dia com alvos de 40 px e menu de três pontos (subir, descer, tirar) numa folha que sobe de baixo (`ActionSheet.vue`); estado do canal no cabeçalho com 40 px; subtítulo da tela fala em "três pontos" no celular. |
+| F2 | `ScrollTabs.vue` nas abas da Publicidade e dos Ajustes: aba atual centralizada e seta com sombra nas pontas que têm mais abas. |
+| F3 | Grade: linha em duas camadas (nome inteiro, hora, duração e menu de três pontos; "hora marcada" em linha própria). Gráficos (CG): a tela de teste vem logo depois de "O que mostrar". Controle de tamanho sem saltos (`RangeField.vue`). Textos de botões de recolher com 40 px. |
+| F4 | As cinco tabelas (Comerciais, Intervalos, Hoje e Relatórios) viram cartões no celular (`table-cards` + `data-label`). |
+| F5 | A tela do celular não apaga durante um envio de arquivo (Wake Lock), senão o envio parava. |
+| F6 | `manifest.webmanifest`, ícones e `apple-touch-icon` para "Adicionar à tela inicial" no iPhone (Safari) e no Android (Chrome). Cabeçalhos de cache: só os arquivos com hash no nome ficam 1 ano; ícones e manifesto 1 hora, para uma troca de logo aparecer logo. |
+| F7 | Script de auditoria com lista dos alvos pequenos (`AUDIT_DETAILS=1`); este resultado. |
+
+### O que **não** foi feito (de propósito ou por falta de teste)
+- **Ícones do aplicativo**: são um quadrado azul com "LFTV" em letras, **provisórios**. Troque
+  `frontend/public/icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (deixe o desenho dentro dos
+  80% do meio) e `apple-touch-icon.png` (180 x 180, sem transparência).
+- **Barras fixas** ("ações fixas embaixo" no No ar e a tela de teste do CG fixa no topo): não
+  entraram. Em CSS, um elemento fixo só funciona dentro do bloco dele, e essas telas usam painéis
+  com rolagem própria; precisaria reorganizar as telas.
+- **Texto na tela**: já era bom no celular; a prévia continua abaixo do formulário.
+- **Pressionar e segurar** no navegador de arquivos: não feito (o menu de cada arquivo já tem alvos
+  de 40 px).
+- **Não testado em celular de verdade nem no Safari**: aqui só há o Chromium (emulando toque). O
+  Safari do iPhone usa outro motor (WebKit): conferir o zoom ao tocar em campo, a área segura da
+  barra de baixo, o `dvh` e a instalação na tela inicial. Roteiro: `.dev/acceptance/F9.md`.

@@ -162,6 +162,8 @@ export default {
         title: 'No ar',
         subtitle:
             'Acompanhe o que está no ar e a ordem dos programas do dia. Para trocar a ordem, arraste os programas.',
+        subtitleTouch:
+            'Acompanhe o que está no ar e a ordem dos programas do dia. Para trocar a ordem, toque nos três pontos do programa.',
         dayList: 'Programação do dia',
         prevDay: 'Dia anterior',
         nextDay: 'Próximo dia',
@@ -187,6 +189,12 @@ export default {
             delete: 'Tirar',
             now: 'NO AR',
             spot: 'comercial',
+        },
+        item: {
+            actions: 'Ações do item',
+            up: 'Subir na ordem',
+            down: 'Descer na ordem',
+            remove: 'Tirar do dia',
         },
         empty: {
             title: 'Este dia ainda não tem programação',

@@ -23,6 +23,7 @@ dayjs.extend(timezone)
 dayjs.extend(utc)
 
 import { stringFormatter, playlistOperations } from '@/composables/helper'
+import ActionSheet from '@/components/ui/ActionSheet.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import { displayTitle } from '@/composables/displayTitle'
 import { useConfig } from '@/stores/config'
@@ -161,6 +162,22 @@ function dropItem(event: any) {
     })
 }
 
+// No celular não há como arrastar com o dedo: subir e descer são botões, na folha de ações do item.
+const sheetIndex = ref<number | null>(null)
+
+function moveItem(index: number, delta: number) {
+    const target = index + delta
+
+    if (target < 0 || target >= playlistStore.playlist.length) {
+        return
+    }
+
+    const [moved] = playlistStore.playlist.splice(index, 1)
+
+    playlistStore.playlist.splice(target, 0, moved!)
+    processPlaylist(listDate.value, playlistStore.playlist, false)
+}
+
 function deletePlaylistItem(index: number) {
     playlistStore.playlist.splice(index, 1)
 
@@ -227,11 +244,11 @@ function deletePlaylistItem(index: number) {
             class="grid bg-base-100 border-b border-base-content/30 rounded-tr-lg py-2 text-sm font-bold text-base-content/70"
             :class="
                 details
-                    ? 'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px]'
-                    : 'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_95px_85px_85px]'
+                    ? 'grid-cols-[76px_minmax(0,1fr)_44px_44px_44px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px]'
+                    : 'grid-cols-[76px_minmax(0,1fr)_44px_44px_44px] 2md:grid-cols-[85px_auto_85px_95px_85px_85px]'
             "
         >
-            <div v-if="!configStore.playout.playlist.infinit" class="px-3">
+            <div v-if="!configStore.playout.playlist.infinit" class="px-2 2md:px-3">
                 {{ t('player2.col.time') }}
             </div>
             <div>
@@ -258,6 +275,7 @@ function deletePlaylistItem(index: number) {
             <div class="px-2 hidden 2md:block text-center">
                 {{ t('player2.col.delete') }}
             </div>
+            <div class="2md:hidden" aria-hidden="true" />
         </div>
 
         <div id="playlist-container" ref="playlistContainer" class="h-[calc(100%-35px)]">
@@ -301,16 +319,17 @@ function deletePlaylistItem(index: number) {
                         :key="item.uid"
                         class="grid odd:bg-base-200 border-b border-base-content/20 duration-500 transition-colors py-2"
                         :class="{
-                            'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px]':
+                            'grid-cols-[76px_minmax(0,1fr)_44px_44px_44px] 2md:grid-cols-[85px_auto_85px_85px_85px_85px_85px_85px_85px]':
                                 details,
-                            'grid-cols-[85px_auto_85px_85px] 2md:grid-cols-[85px_auto_85px_95px_85px_85px]': !details,
+                            'grid-cols-[76px_minmax(0,1fr)_44px_44px_44px] 2md:grid-cols-[85px_auto_85px_95px_85px_85px]':
+                                !details,
                             'bg-lime-500/30!':
                                 playlistStore.playoutIsRunning && listDate === todayDate && index === currentIndex,
                             'bg-amber-600/40!': item.overtime,
                             'text-base-content/60': item.ad,
                         }"
                     >
-                        <div v-if="!configStore.playout.playlist.infinit" class="px-3 text-left">
+                        <div v-if="!configStore.playout.playlist.infinit" class="px-2 2md:px-3 text-left">
                             {{ secondsToTime(item.begin) }}
                         </div>
                         <div
@@ -336,8 +355,12 @@ function deletePlaylistItem(index: number) {
                             />
                         </div>
                         <div class="text-center hover:text-base-content/70">
-                            <button class="cursor-pointer" @click="preview(item.source)">
-                                <i class="bi-play-fill" />
+                            <button
+                                class="btn btn-ghost btn-square btn-xs"
+                                :aria-label="t('player2.col.see')"
+                                @click="preview(item.source)"
+                            >
+                                <i class="bi-play-fill text-base" />
                             </button>
                         </div>
                         <div class="text-center hidden 2md:block">{{ secToHMS(item.duration) }}</div>
@@ -351,20 +374,68 @@ function deletePlaylistItem(index: number) {
                             <input v-model="item.ad" class="checkbox checkbox-xs rounded" type="checkbox" />
                         </div>
                         <div class="text-center hover:text-base-content/70">
-                            <button class="cursor-pointer" @click="editItem(index)">
-                                <i class="bi-pencil-square" />
+                            <button
+                                class="btn btn-ghost btn-square btn-xs"
+                                :aria-label="t('player2.col.edit')"
+                                @click="editItem(index)"
+                            >
+                                <i class="bi-pencil-square text-base" />
                             </button>
                         </div>
                         <div
                             class="text-center hidden 2md:block justify-center text-base-content/80 hover:text-base-content/60"
                         >
-                            <button class="cursor-pointer" @click="deletePlaylistItem(index)">
-                                <i class="bi-x-circle-fill" />
+                            <button
+                                class="btn btn-ghost btn-square btn-xs"
+                                :aria-label="t('player2.col.delete')"
+                                @click="deletePlaylistItem(index)"
+                            >
+                                <i class="bi-x-circle-fill text-base" />
+                            </button>
+                        </div>
+                        <div class="text-center 2md:hidden">
+                            <button
+                                class="btn btn-ghost btn-square btn-xs"
+                                :aria-label="t('player2.item.actions')"
+                                @click="sheetIndex = index"
+                            >
+                                <i class="bi-three-dots-vertical text-base" />
                             </button>
                         </div>
                     </li>
                 </template>
             </VirtualList>
         </div>
+
+        <ActionSheet
+            :show="sheetIndex !== null"
+            :title="
+                sheetIndex !== null
+                    ? displayTitle(playlistStore.playlist[sheetIndex]?.title) ||
+                      filename(playlistStore.playlist[sheetIndex]?.source ?? '')
+                    : ''
+            "
+            @close="sheetIndex = null"
+        >
+            <template v-if="sheetIndex !== null">
+                <button
+                    class="btn btn-ghost justify-start"
+                    :disabled="sheetIndex === 0"
+                    @click="moveItem(sheetIndex, -1)"
+                >
+                    <i class="bi bi-arrow-up" /> {{ t('player2.item.up') }}
+                </button>
+                <button
+                    class="btn btn-ghost justify-start"
+                    :disabled="sheetIndex === playlistStore.playlist.length - 1"
+                    @click="moveItem(sheetIndex, 1)"
+                >
+                    <i class="bi bi-arrow-down" /> {{ t('player2.item.down') }}
+                </button>
+                <button class="btn btn-ghost justify-start text-error" @click="deletePlaylistItem(sheetIndex)">
+                    <i class="bi bi-x-circle" /> {{ t('player2.item.remove') }}
+                </button>
+            </template>
+        </ActionSheet>
     </div>
 </template>

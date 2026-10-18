@@ -62,6 +62,8 @@ const playlistStore = usePlaylist()
 
 const { listDate, firstLoad } = storeToRefs(usePlaylist())
 
+// Na tela de toque não há arrastar: a ordem se troca pelo menu (três pontos) de cada programa.
+const touchScreen = window.matchMedia('(pointer: coarse)').matches
 const beforeDayStart = ref(false)
 const targetDate = ref(dayjs().tz(configStore.timezone).format('YYYY-MM-DD'))
 const playlistTable = ref()
@@ -422,7 +424,10 @@ async function deletePlaylist(del: boolean) {
 <template>
     <div class="h-full">
         <div class="px-3 pt-4">
-            <PageHeader :title="t('player2.title')" :subtitle="t('player2.subtitle')" />
+            <PageHeader
+                :title="t('player2.title')"
+                :subtitle="touchScreen ? t('player2.subtitleTouch') : t('player2.subtitle')"
+            />
         </div>
         <PlayerControl />
         <div class="flex flex-wrap items-center gap-2 px-3 pt-3 pb-1">
@@ -520,7 +525,7 @@ async function deletePlaylist(del: boolean) {
                 </ul>
             </div>
         </div>
-        <div class="px-3 pb-4 min-h-96 h-[calc(100vh-200px)]">
+        <div class="px-3 pb-4 min-h-96 h-[calc(100dvh-200px)]">
             <Splitpanes
                 v-if="configStore.playout.processing.mode === 'playlist'"
                 class="border border-base-content/30 rounded-sm shadow"

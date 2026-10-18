@@ -176,7 +176,7 @@ watch(() => configStore.i, loadAll)
             <h2 class="font-bold text-lg mb-2">{{ t('commercial.spots.list') }}</h2>
             <p v-if="!spots.length" class="opacity-70">{{ t('commercial.spots.empty') }}</p>
             <div v-else class="overflow-x-auto">
-                <table class="table table-sm">
+                <table class="table table-sm table-cards">
                     <thead>
                         <tr>
                             <th>{{ t('commercial.spots.title') }}</th>
@@ -188,17 +188,19 @@ watch(() => configStore.i, loadAll)
                     </thead>
                     <tbody>
                         <tr v-for="spot in spots" :key="spot.id">
-                            <td>
+                            <td :data-label="t('commercial.spots.title')">
                                 <div class="font-medium">{{ spot.title }}</div>
                                 <div class="text-xs opacity-60">{{ spot.original_filename }}</div>
                             </td>
-                            <td>
+                            <td :data-label="t('commercial.campaigns.campaign')">
                                 <template v-if="campaignById(spot.campaign_id)">
                                     {{ campaignLabel(campaignById(spot.campaign_id)!) }}
                                 </template>
                             </td>
-                            <td>{{ formatDuration(spot.duration_sec) }}</td>
-                            <td class="min-w-48">
+                            <td :data-label="t('commercial.spots.duration')">
+                                {{ formatDuration(spot.duration_sec) }}
+                            </td>
+                            <td :data-label="t('commercial.spots.state')" class="min-w-48">
                                 <template v-if="spot.status === 'processing'">
                                     <span class="badge badge-sm badge-info text-white">{{
                                         t('commercial.spots.converting')
@@ -222,7 +224,7 @@ watch(() => configStore.i, loadAll)
                                     <div class="text-xs mt-1 text-error">{{ spot.error }}</div>
                                 </template>
                             </td>
-                            <td class="text-right whitespace-nowrap">
+                            <td data-label="" class="text-right whitespace-nowrap">
                                 <button v-if="spot.status === 'failed'" class="btn btn-xs" @click="retry(spot)">
                                     {{ t('commercial.spots.retry') }}
                                 </button>

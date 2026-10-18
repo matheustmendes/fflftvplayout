@@ -428,7 +428,7 @@ async function downloadLog() {
                 <!-- Search -->
                 <label class="grow min-w-56">
                     <span class="block text-sm font-bold mb-1">{{ t('history2.searchLabel') }}</span>
-                    <span class="input w-full">
+                    <span class="input w-full min-h-10">
                         <i class="bi bi-search opacity-60" />
                         <input v-model="searchText" type="search" :placeholder="t('history2.searchPlaceholder')" />
                     </span>
@@ -483,7 +483,7 @@ async function downloadLog() {
             <div
                 v-if="visibleEntries.length > 0"
                 id="log-container"
-                class="max-h-[calc(100vh-22rem)] min-h-80 overflow-y-auto"
+                class="max-h-[calc(100dvh-22rem)] min-h-80 overflow-y-auto"
             >
                 <ul id="log-content">
                     <li

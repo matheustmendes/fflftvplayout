@@ -141,7 +141,7 @@ watch(() => configStore.i, load)
 
             <p v-if="!dayWindows.length" class="opacity-70">{{ t('commercial.breaks.empty') }}</p>
             <div v-else class="overflow-x-auto">
-                <table class="table table-sm">
+                <table class="table table-sm table-cards">
                     <thead>
                         <tr>
                             <th>{{ t('commercial.breaks.time') }}</th>
@@ -153,10 +153,14 @@ watch(() => configStore.i, load)
                     </thead>
                     <tbody>
                         <tr v-for="window in dayWindows" :key="window.id" :class="!window.enabled && 'opacity-50'">
-                            <td class="tabular-nums">{{ window.nominal_time }}</td>
-                            <td>{{ formatDuration(window.duration_sec) }}</td>
-                            <td>{{ window.tolerance_sec }} s</td>
-                            <td>
+                            <td :data-label="t('commercial.breaks.time')" class="tabular-nums">
+                                {{ window.nominal_time }}
+                            </td>
+                            <td :data-label="t('commercial.breaks.length')">
+                                {{ formatDuration(window.duration_sec) }}
+                            </td>
+                            <td :data-label="t('commercial.breaks.tolerance')">{{ window.tolerance_sec }} s</td>
+                            <td :data-label="t('commercial.breaks.active')">
                                 <input
                                     type="checkbox"
                                     class="toggle toggle-sm toggle-accent"
@@ -165,7 +169,7 @@ watch(() => configStore.i, load)
                                     @change="toggle(window)"
                                 />
                             </td>
-                            <td class="text-right whitespace-nowrap">
+                            <td data-label="" class="text-right whitespace-nowrap">
                                 <template v-if="canManage">
                                     <button class="btn btn-xs" @click="startForm(window)">
                                         {{ t('commercial.edit') }}

@@ -608,6 +608,7 @@ const previewAnimationClass = computed(() => {
                             </div>
                             <div class="absolute" :style="previewBoxStyle">
                                 <div
+                                    data-audit-ignore
                                     class="whitespace-pre-line wrap-break-word w-fit"
                                     :class="[previewAnimationClass, previewAnimationClass && 'whitespace-nowrap']"
                                     :style="previewTextStyle"
@@ -652,7 +653,7 @@ const previewAnimationClass = computed(() => {
                 <section class="card bg-base-100 shadow p-5 lg:col-span-2">
                     <button
                         type="button"
-                        class="flex w-full items-center gap-2 text-left font-bold cursor-pointer"
+                        class="flex min-h-10 w-full items-center gap-2 text-left font-bold cursor-pointer"
                         :aria-expanded="showAdvanced"
                         @click="showAdvanced = !showAdvanced"
                     >

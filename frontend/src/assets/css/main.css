@@ -250,6 +250,18 @@ html {
 }
 
 @media (pointer: coarse) {
+    html {
+        /* Ao tocar num campo, a página rola até ele ficar acima da barra de baixo e do teclado. */
+        scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+    }
+
+    body {
+        /* No Android, puxar a tela para baixo recarregava a página no meio de uma operação. */
+        overscroll-behavior-y: contain;
+    }
+}
+
+@media (pointer: coarse) {
     /* Sem espera de toque duplo e sem zoom ao tocar duas vezes em botões e links. */
     a,
     button,
@@ -271,6 +283,10 @@ html {
         min-height: 2.5rem;
         min-width: 2.5rem;
         padding-inline: 0.75rem;
+    }
+
+    .btn-xs {
+        font-size: 0.875rem;
     }
 
     .btn-circle.btn-xs,
@@ -331,4 +347,62 @@ html {
 /* A área segura do iPhone (a barrinha de baixo e o entalhe). */
 .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Tabelas viram cartões no celular: cada linha é um cartão e cada célula mostra o nome da coluna
+   (o atributo data-label). A primeira célula é o título do cartão. */
+@media (max-width: 639px) {
+    .table-cards thead {
+        display: none;
+    }
+
+    .table-cards,
+    .table-cards tbody,
+    .table-cards tr,
+    .table-cards td {
+        display: block;
+        width: 100%;
+    }
+
+    .table-cards tr {
+        margin-bottom: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid var(--color-base-300);
+        border-radius: 0.75rem;
+        background: var(--color-base-100);
+    }
+
+    .table-cards td {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        min-width: 0 !important;
+        padding: 0.25rem 0;
+        border: 0;
+        text-align: right;
+    }
+
+    .table-cards td::before {
+        content: attr(data-label);
+        flex-shrink: 0;
+        font-weight: 600;
+        text-align: left;
+        opacity: 0.65;
+    }
+
+    .table-cards td[data-label='']::before,
+    .table-cards td:first-child::before {
+        display: none;
+    }
+
+    .table-cards td:first-child {
+        display: block;
+        font-weight: 600;
+        text-align: left;
+    }
+
+    .table-cards td[data-label=''] {
+        justify-content: flex-end;
+    }
 }

@@ -189,6 +189,7 @@ export default {
         removeText: 'The break at {time} will be removed.',
     },
     grid: {
+        actions: 'Program actions',
         fixedAdd: 'Fixed time',
         fixedHelp:
             'Use when this program must start at an exact time. The system fills the spare time with filler and, if the program before it runs over, tells you here and when the day is built.',

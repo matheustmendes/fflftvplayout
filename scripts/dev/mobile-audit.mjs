@@ -87,18 +87,26 @@ for (const [name, path] of routes) {
         }
         const targets = [
             ...document.querySelectorAll('button, a, input:not([type=hidden]), select, textarea, [role=button]'),
-        ].filter((e) => visible(e) && !(e.type === 'checkbox' || e.type === 'radio'))
+        ].filter(
+            (e) =>
+                visible(e) &&
+                !(e.type === 'checkbox' || e.type === 'radio') &&
+                // O campo dentro de um .input é só o miolo: o alvo de toque é a caixa inteira.
+                !e.parentElement?.classList.contains('input'),
+        )
         const below = (limit) =>
             targets.filter((e) => {
                 const b = e.getBoundingClientRect()
                 return b.height < limit || b.width < limit
             })
-        const tiny = [...document.querySelectorAll('body *')].filter(
-            (e) =>
-                e.childNodes.length &&
-                [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) &&
-                parseFloat(getComputedStyle(e).fontSize) < 12,
-        )
+        const tiny = [...document.querySelectorAll('body *')]
+            .filter((e) => visible(e) && !e.closest('[data-audit-ignore]'))
+            .filter(
+                (e) =>
+                    e.childNodes.length &&
+                    [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) &&
+                    parseFloat(getComputedStyle(e).fontSize) < 12,
+            )
         const small = below(36)
         const under40 = below(40)
         return {

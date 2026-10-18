@@ -1,5 +1,6 @@
 import { authFetch } from '@/composables/authFetch'
 import { useFileUpload } from '@/composables/useFileUpload'
+import { keepScreenAwake } from '@/composables/wakeLock'
 import { useAuth } from '@/stores/auth'
 import { useConfig } from '@/stores/config'
 
@@ -23,15 +24,23 @@ export function useFolderUpload() {
             body: JSON.stringify({ source: folder }),
         })
         await authStore.inspectToken()
-        await upload.uploadFiles([file], {
-            buildRequest: (_file, currentIndex, batchCount) => ({
-                url: `/api/file/${channelId}/upload?path=${encodeURIComponent(`/${folder}`)}`,
-                headers: authStore.authHeader,
-                method: 'PUT',
-                currentIndex,
-                batchCount,
-            }),
-        })
+
+        // Celular: com a tela apagada o envio pararia.
+        const letScreenSleep = await keepScreenAwake()
+
+        try {
+            await upload.uploadFiles([file], {
+                buildRequest: (_file, currentIndex, batchCount) => ({
+                    url: `/api/file/${channelId}/upload?path=${encodeURIComponent(`/${folder}`)}`,
+                    headers: authStore.authHeader,
+                    method: 'PUT',
+                    currentIndex,
+                    batchCount,
+                }),
+            })
+        } finally {
+            letScreenSleep()
+        }
 
         return `${folder}/${file.name}`
     }

@@ -21,6 +21,7 @@ import { stringFormatter } from '@/composables/helper'
 import { humanDuration, humanSize } from '@/composables/humanFormat'
 import { createFilePreviewUrl } from '@/composables/fileAccess'
 import { useFileUpload } from '@/composables/useFileUpload'
+import { keepScreenAwake } from '@/composables/wakeLock'
 
 type UploadStage = 'choose' | 'sending' | 'done' | 'error'
 
@@ -608,6 +609,9 @@ async function answerOverwrite(replace: boolean) {
 }
 
 async function runUpload(filesToUpload: File[]) {
+    // Celular: com a tela apagada o envio pararia.
+    const letScreenSleep = await keepScreenAwake()
+
     await authStore.inspectToken()
     lastPath.value = mediaStore.folderTree.source
     uploadStage.value = 'sending'
@@ -635,6 +639,8 @@ async function runUpload(filesToUpload: File[]) {
     } catch (err: any) {
         uploadStage.value = 'error'
         uploadError.value = err?.message || t('media.uploadError')
+    } finally {
+        letScreenSleep()
     }
 
     mediaStore.getTree(lastPath.value)
@@ -886,7 +892,7 @@ async function runUpload(filesToUpload: File[]) {
             aria-modal="true"
             @keydown.esc="closeUploadDialog"
         >
-            <div class="w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-base-100 p-5 sm:p-6 shadow-2xl">
+            <div class="w-full max-w-2xl max-h-[92dvh] overflow-y-auto rounded-2xl bg-base-100 p-5 sm:p-6 shadow-2xl">
                 <div class="flex items-start gap-3">
                     <h2 class="grow text-xl font-bold">{{ t('files2.uploadTitle') }}</h2>
                     <button
