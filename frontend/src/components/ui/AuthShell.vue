@@ -11,7 +11,7 @@ withDefaults(
 )
 </script>
 <template>
-    <main class="min-h-screen w-full flex items-center justify-center px-3 sm:px-4 py-6 sm:py-10 bg-base-200">
+    <main class="min-h-screen min-h-dvh w-full flex items-center justify-center px-3 sm:px-4 py-6 sm:py-10 bg-base-200">
         <div class="w-full" :class="wide ? 'max-w-3xl' : 'max-w-md'">
             <div class="flex flex-col items-center text-center mb-5">
                 <img :src="logo" alt="" width="72" height="72" class="h-16 w-16 sm:h-[72px] sm:w-[72px] drop-shadow" />

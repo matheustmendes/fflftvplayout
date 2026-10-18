@@ -9,7 +9,8 @@
 //   npm i --no-save playwright-core
 //   CHROMIUM_PATH=/usr/bin/chromium AUDIT_URL=http://127.0.0.1:8787 \
 //     AUDIT_STATE=state-admin.json node scripts/dev/mobile-audit.mjs
-// Variáveis: AUDIT_URL, AUDIT_STATE, AUDIT_OUT (pasta das fotos), AUDIT_WIDTH, AUDIT_HEIGHT.
+// Variáveis: AUDIT_URL, AUDIT_STATE, AUDIT_OUT (pasta das fotos), AUDIT_WIDTH, AUDIT_HEIGHT,
+// AUDIT_DETAILS=1 (lista os alvos pequenos e os textos pequenos de cada tela).
 import { chromium } from 'playwright-core'
 import fs from 'node:fs'
 const OUT = process.env.AUDIT_OUT ?? './mobile-audit-shots'
@@ -71,32 +72,44 @@ for (const [name, path] of routes) {
                     `${e.tagName.toLowerCase()}.${(e.className || '').toString().split(' ').slice(0, 3).join('.')}:${Math.round(b.right)}`,
                 )
         }
-        const small = [
-            ...document.querySelectorAll('button, a, input:not([type=hidden]), select, [role=button]'),
-        ].filter((e) => {
+        const describe = (e) => {
             const b = e.getBoundingClientRect()
-            const cs = getComputedStyle(e)
-            return (
-                b.width > 0 &&
-                b.height > 0 &&
-                cs.visibility !== 'hidden' &&
-                (b.height < 36 || b.width < 36) &&
-                !(e.type === 'checkbox' || e.type === 'radio')
-            )
-        }).length
-        const tinyText = [...document.querySelectorAll('body *')].filter(
+            const text = (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || '')
+                .trim()
+                .replace(/\s+/g, ' ')
+                .slice(0, 28)
+            const cls = (e.className || '').toString().split(' ').slice(0, 3).join('.')
+            return `${e.tagName.toLowerCase()}.${cls} "${text}" ${Math.round(b.width)}x${Math.round(b.height)}`
+        }
+        const visible = (e) => {
+            const b = e.getBoundingClientRect()
+            return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== 'hidden'
+        }
+        const targets = [
+            ...document.querySelectorAll('button, a, input:not([type=hidden]), select, textarea, [role=button]'),
+        ].filter((e) => visible(e) && !(e.type === 'checkbox' || e.type === 'radio'))
+        const below = (limit) =>
+            targets.filter((e) => {
+                const b = e.getBoundingClientRect()
+                return b.height < limit || b.width < limit
+            })
+        const tiny = [...document.querySelectorAll('body *')].filter(
             (e) =>
                 e.childNodes.length &&
                 [...e.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim()) &&
                 parseFloat(getComputedStyle(e).fontSize) < 12,
-        ).length
+        )
+        const small = below(36)
+        const under40 = below(40)
         return {
             scrollW: document.documentElement.scrollWidth,
             vw,
             overflowX: document.documentElement.scrollWidth > vw + 1,
             wide: wide.slice(0, 3),
-            smallTargets: small,
-            tinyText,
+            smallTargets: small.length,
+            under40: under40.length,
+            tinyText: tiny.length,
+            details: { small: under40.slice(0, 12).map(describe), tiny: tiny.slice(0, 6).map(describe) },
         }
     })
     console.log(
@@ -104,9 +117,14 @@ for (const [name, path] of routes) {
         r.overflowX ? 'ESTOURA' : 'ok     ',
         `scrollW=${r.scrollW}`,
         `alvos<36px=${r.smallTargets}`,
+        `alvos<40px=${r.under40}`,
         `texto<12px=${r.tinyText}`,
         r.wide.length ? 'larg: ' + r.wide.join(' | ') : '',
     )
+    if (process.env.AUDIT_DETAILS) {
+        for (const line of r.details.small) console.log('    alvo  ', line)
+        for (const line of r.details.tiny) console.log('    texto ', line)
+    }
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false })
 }
 console.log('erros de página:', JSON.stringify(errors))

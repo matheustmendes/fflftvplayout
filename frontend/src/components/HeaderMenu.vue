@@ -243,7 +243,7 @@ onMounted(() => {
 
     <!-- Barra de baixo do celular -->
     <nav
-        class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-base-100 border-t border-base-300 grid"
+        class="pb-safe md:hidden fixed bottom-0 inset-x-0 z-30 bg-base-100 border-t border-base-300 grid"
         :style="{ gridTemplateColumns: `repeat(${mainItems.length}, minmax(0, 1fr))` }"
         aria-label="Menu"
     >
@@ -251,7 +251,7 @@ onMounted(() => {
             v-for="item in mainItems"
             :key="item.key"
             :to="channelLink(item.path)"
-            class="flex flex-col items-center gap-0.5 py-2 text-xs"
+            class="flex min-h-14 flex-col items-center justify-center gap-0.5 py-2 text-xs"
             :class="isActive(item) ? 'text-primary font-semibold' : 'opacity-70'"
         >
             <i class="bi text-xl" :class="item.icon" />

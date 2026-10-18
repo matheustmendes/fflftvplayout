@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, useTemplateRef, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHead } from '@unhead/vue'
-import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 
 import PageHeader from '@/components/ui/PageHeader.vue'
+import ScrollTabs, { type ScrollTab } from '@/components/ui/ScrollTabs.vue'
 
 import { usePlayoutDirty } from '@/composables/settingsHelpers'
 import { useAuth } from '@/stores/auth'
@@ -24,7 +25,6 @@ const configStore = useConfig()
 const route = useRoute()
 const router = useRouter()
 const playoutDirty = usePlayoutDirty()
-const tabList = useTemplateRef<HTMLElement>('tabList')
 
 useHead({
     title: computed(() => t('settings2.title')),
@@ -60,14 +60,13 @@ const tabs = computed<SettingsTab[]>(() => {
     return all
 })
 
-// On a phone the tab row scrolls sideways: keep the current tab in sight.
-watch(
-    () => route.name,
-    async () => {
-        await nextTick()
-        tabList.value?.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: 'center', block: 'nearest' })
-    },
-    { immediate: true },
+const tabList = computed<ScrollTab[]>(() =>
+    tabs.value.map((tab) => ({
+        name: tab.name,
+        label: tab.label,
+        icon: tab.icon,
+        dirty: Boolean(tab.playout && playoutDirty.value),
+    })),
 )
 
 // The router lands everyone on the channel tab; the operator has no such tab.
@@ -92,31 +91,13 @@ watch(
             </template>
         </PageHeader>
 
-        <nav
+        <ScrollTabs
             v-if="tabs.length > 1"
-            ref="tabList"
-            role="tablist"
-            class="tabs tabs-border mb-5 flex-nowrap overflow-x-auto border-b border-base-300"
-        >
-            <RouterLink
-                v-for="tab in tabs"
-                :key="tab.name"
-                role="tab"
-                :to="{ name: tab.name, query: channelQuery }"
-                class="tab h-12 shrink-0 gap-2 whitespace-nowrap px-4 text-base"
-                :class="route.name === tab.name ? 'tab-active font-semibold' : 'text-base-content/75'"
-            >
-                <i class="bi" :class="tab.icon" />
-                {{ tab.label }}
-                <span
-                    v-if="tab.playout && playoutDirty"
-                    class="h-2.5 w-2.5 rounded-full bg-warning"
-                    :title="t('settings2.unsavedDot')"
-                    role="img"
-                    :aria-label="t('settings2.unsavedDot')"
-                />
-            </RouterLink>
-        </nav>
+            class="mb-5"
+            :tabs="tabList"
+            :query="channelQuery"
+            :dirty-label="t('settings2.unsavedDot')"
+        />
 
         <RouterView />
     </div>

@@ -17,7 +17,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 </script>
 <template>
-    <div class="sticky bottom-14 md:bottom-0 z-20 mt-6 pb-2 md:pb-4">
+    <div class="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] md:bottom-0 z-20 mt-6 pb-2 md:pb-4">
         <div
             class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl border border-base-300 bg-base-100 p-3 shadow-lg"
             :class="dirty && 'border-warning'"

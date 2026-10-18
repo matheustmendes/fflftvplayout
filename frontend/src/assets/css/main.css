@@ -241,3 +241,94 @@ multiselect customization
     opacity: 0.5 !important;
     transition: 0.3s;
 }
+
+/* ---- Celular e tablet (iPhone e Android) ------------------------------------------------
+   Ver .dev/mobile_plan.md. Tudo aqui só vale para tela de toque, o computador não muda. */
+html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+}
+
+@media (pointer: coarse) {
+    /* Sem espera de toque duplo e sem zoom ao tocar duas vezes em botões e links. */
+    a,
+    button,
+    summary,
+    select,
+    label,
+    [role='button'],
+    [role='tab'] {
+        touch-action: manipulation;
+    }
+
+    /* Alvos de toque de pelo menos 40 px (o iOS pede 44 px, o Android 48 dp com o espaço ao redor). */
+    .btn {
+        min-height: 2.5rem;
+    }
+
+    .btn-xs,
+    .btn-sm {
+        min-height: 2.5rem;
+        min-width: 2.5rem;
+        padding-inline: 0.75rem;
+    }
+
+    .btn-circle.btn-xs,
+    .btn-circle.btn-sm {
+        width: 2.5rem;
+        height: 2.5rem;
+        padding-inline: 0;
+    }
+
+    .tab {
+        min-height: 2.75rem;
+    }
+
+    .checkbox,
+    .radio {
+        --size: 1.5rem;
+    }
+
+    .toggle {
+        --size: 1.75rem;
+    }
+
+    .range {
+        min-height: 2.5rem;
+    }
+
+    /* O Safari do iPhone dá zoom na página ao tocar num campo com letra menor que 16 px. */
+    .input,
+    .select,
+    .textarea,
+    .file-input,
+    .dp__input,
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']),
+    select,
+    textarea {
+        font-size: 16px;
+    }
+
+    .input,
+    .select,
+    .file-input {
+        min-height: 2.5rem;
+    }
+
+    .input-xs,
+    .input-sm,
+    .select-xs,
+    .select-sm {
+        height: 2.5rem;
+    }
+
+    .menu li > *:not(ul, .menu-title, details),
+    .menu-title {
+        min-height: 2.5rem;
+    }
+}
+
+/* A área segura do iPhone (a barrinha de baixo e o entalhe). */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+}

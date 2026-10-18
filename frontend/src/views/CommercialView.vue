@@ -2,7 +2,9 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useHead } from '@unhead/vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
+
+import ScrollTabs from '@/components/ui/ScrollTabs.vue'
 
 import { useAuth } from '@/stores/auth'
 
@@ -32,18 +34,7 @@ const tabs = computed(() => {
 </script>
 <template>
     <div class="w-full px-2 sm:px-6 pb-10">
-        <div role="tablist" class="tabs tabs-border mt-4 overflow-x-auto flex-nowrap">
-            <RouterLink
-                v-for="tab in tabs"
-                :key="tab.name"
-                role="tab"
-                :to="{ name: tab.name, query: channelQuery }"
-                class="tab whitespace-nowrap"
-                :class="route.name === tab.name && 'tab-active font-semibold'"
-            >
-                {{ tab.label }}
-            </RouterLink>
-        </div>
+        <ScrollTabs class="mt-4" :tabs="tabs" :query="channelQuery" />
         <div class="mt-4 max-w-6xl mx-auto">
             <RouterView />
         </div>
