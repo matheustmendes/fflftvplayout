@@ -225,6 +225,32 @@ na programação ele precisa ser **registrado** (Publicidade > Comerciais, ou
 `POST /api/commercials/{canal}/spots` apontando o arquivo do storage), o que dispara a
 conversão para o formato do canal.
 
+## 7. Trazer os vídeos do canal da LFTV no YouTube
+
+`deploy/youtube-import.sh` baixa direto na VPS (nada passa pelo seu computador), com o
+yt-dlp, em 1080p MP4 (H.264/AAC). Rodar de novo traz só o que é novo.
+
+```sh
+sudo deploy/youtube-import.sh update      # instala o yt-dlp
+sudo deploy/youtube-import.sh init        # cria /etc/ffplayout/youtube-import.conf
+sudo deploy/youtube-import.sh test        # lista as playlists e confere o dono de cada uma
+sudo deploy/youtube-import.sh size        # estimativa de tamanho x espaço livre
+sudo deploy/youtube-import.sh dry-run
+sudo deploy/youtube-import.sh start       # em segundo plano; acompanhe com: logs
+sudo deploy/youtube-import.sh verify
+sudo deploy/youtube-import.sh install-timer   # opcional: vídeos novos todo dia às 5h
+```
+
+- Só baixa vídeos do canal LFTV Oficial (`ALLOWED_CHANNEL_ID`). O `test` mostra o dono de
+  cada fonte e o download recusa qualquer vídeo de outro canal (`--match-filter`).
+- Cada playlist vira uma subpasta de `/var/lib/ffplayout/storage/youtube/`.
+- Use `LIMIT_MBIT` enquanto o canal estiver no ar.
+- **Bloqueio do YouTube:** IP de datacenter às vezes recebe "Sign in to confirm you're not
+  a bot". Se acontecer, exporte os cookies de uma conta logada (extensão "Get cookies.txt
+  LOCALLY") para `/etc/ffplayout/youtube-cookies.txt` e ligue `COOKIES_FILE` no `.conf`.
+- O YouTube muda com frequência: se o download falhar de repente, rode `update`.
+- Para o yt-dlp é preciso `node` ou `deno` instalado (`sudo apt install nodejs`).
+
 ## Testado e não testado
 
 Testado na nuvem (MediaMTX compilado da branch principal, FFmpeg 7.1.1):
@@ -273,3 +299,9 @@ Rode primeiro numa VPS descartável.
   rodando 24 h, e o tempo real de queda e retorno visto por um destino.
 - Destinos reais: se reconectam sozinhos, e com qual atraso.
 - Banda, CPU e a estabilidade do SRT numa VPS de verdade.
+
+Testado na nuvem para o `youtube-import.sh`: `bash -n`, `test` (lista as playlists do canal
+com o dono de cada uma e **recusa** um vídeo de outro canal), `size` e `verify`.
+**Não testado: o download em si.** O YouTube bloqueou o IP da nuvem ("Sign in to confirm
+you're not a bot"), então a escolha do formato 1080p, a pasta de saída e o arquivo de
+"já baixados" só serão confirmados na VPS. Se ela também for bloqueada, use os cookies.
