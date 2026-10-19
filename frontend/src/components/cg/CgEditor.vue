@@ -8,6 +8,7 @@ import HelpTip from '@/components/ui/HelpTip.vue'
 import RangeField from '@/components/ui/RangeField.vue'
 
 import { useCommercialApi } from '@/composables/commercialApi'
+import { useProgramList, type ProgramOccurrence } from '@/composables/programList'
 import { ALL_DAYS, WORK_DAYS, newRule, shortClock, type Cg, type CgRule } from '@/composables/cgApi'
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'bmp']
@@ -20,7 +21,7 @@ const emit = defineEmits<{
     (event: 'cancel'): void
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const draft = ref<Cg>({
     ...props.cg,
@@ -32,8 +33,67 @@ const draft = ref<Cg>({
 })
 const picking = ref(false)
 const campaigns = ref<CommercialCampaign[]>([])
+const occurrences = ref<ProgramOccurrence[]>([])
+
+const PROGRAM_LIST_DAYS = 7
+
+/** Programs of the next days, each with its day and time. */
+const occurrencesByDay = computed(() => {
+    const days = new Map<string, ProgramOccurrence[]>()
+
+    for (const item of occurrences.value) {
+        days.set(item.date, [...(days.get(item.date) ?? []), item])
+    }
+
+    return [...days.entries()]
+})
+
+/** Every program title once, for a rule that holds on any day. */
+const programTitles = computed(() => [...new Set(occurrences.value.map((item) => item.title))].sort())
+
+function dayLabel(date: string): string {
+    const day = new Date(`${date}T12:00:00`)
+    const today = new Date()
+
+    today.setHours(12, 0, 0, 0)
+
+    const distance = Math.round((day.getTime() - today.getTime()) / 86_400_000)
+    const name = day.toLocaleDateString(locale.value, { weekday: 'short', day: '2-digit', month: '2-digit' })
+
+    if (distance === 0) {
+        return `${t('cg.editor.today')} (${name})`
+    }
+
+    return distance === 1 ? `${t('cg.editor.tomorrow')} (${name})` : name
+}
+
+/** `any` or `YYYY-MM-DD|HH:MM|title`; empty keeps what the operator typed. */
+function pickProgram(rule: CgRule, value: string) {
+    if (value === '') {
+        return
+    }
+
+    if (value.startsWith('any|')) {
+        rule.program_match = value.slice(4)
+        rule.date_from = null
+        rule.date_to = null
+
+        return
+    }
+
+    const [date, , ...title] = value.split('|')
+
+    rule.program_match = title.join('|')
+    rule.date_from = date
+    rule.date_to = date
+    rule.weekdays = ALL_DAYS
+}
 
 onMounted(async () => {
+    occurrences.value = await useProgramList()
+        .upcoming(PROGRAM_LIST_DAYS)
+        .catch(() => [])
+
     try {
         campaigns.value = (await useCommercialApi().campaigns()).filter(
             (campaign) => campaign.active || campaign.id === draft.value.campaign_id,
@@ -464,6 +524,35 @@ function submit() {
                 </div>
 
                 <div v-else class="space-y-3">
+                    <label v-if="occurrences.length" class="form-control">
+                        <span class="label-text mb-1">
+                            {{ t('cg.editor.programPick') }} <HelpTip :text="t('cg.editor.programPickHelp')" />
+                        </span>
+                        <select
+                            class="select select-sm w-full"
+                            value=""
+                            @change="
+                                pickProgram(rule, ($event.target as HTMLSelectElement).value)
+                                ;($event.target as HTMLSelectElement).value = ''
+                            "
+                        >
+                            <option value="">{{ t('cg.editor.programPickPlaceholder') }}</option>
+                            <optgroup v-for="[date, items] in occurrencesByDay" :key="date" :label="dayLabel(date)">
+                                <option
+                                    v-for="item in items"
+                                    :key="`${date}-${item.time}-${item.title}`"
+                                    :value="`${date}|${item.time}|${item.title}`"
+                                >
+                                    {{ item.time }} · {{ item.title }}
+                                </option>
+                            </optgroup>
+                            <optgroup :label="t('cg.editor.programAnyDay')">
+                                <option v-for="title in programTitles" :key="title" :value="`any|${title}`">
+                                    {{ title }}
+                                </option>
+                            </optgroup>
+                        </select>
+                    </label>
                     <label class="form-control">
                         <span class="label-text mb-1">
                             {{ t('cg.editor.programName') }} <HelpTip :text="t('cg.editor.programHelp')" />

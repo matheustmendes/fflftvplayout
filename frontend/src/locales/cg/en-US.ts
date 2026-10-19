@@ -102,6 +102,13 @@ export default {
         repeat: 'Repeat',
         repeatEvery: 'every (minutes)',
         repeatUntil: 'until',
+        programPick: 'Pick from the schedule',
+        programPickHelp:
+            'Lists the programs of the playlists of today and the next days. A program with a time holds only on that day; under "Any day" it holds whenever the program starts. You can also type the name below.',
+        programPickPlaceholder: 'Pick a program…',
+        programAnyDay: 'Any day (whenever it starts)',
+        today: 'Today',
+        tomorrow: 'Tomorrow',
         programName: 'Program name contains',
         programHelp: 'Leave empty to apply to any program. Commercials do not count.',
         offset: 'Appears after (seconds)',

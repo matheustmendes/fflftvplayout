@@ -103,6 +103,13 @@ export default {
         repeat: 'Repetir',
         repeatEvery: 'a cada (minutos)',
         repeatUntil: 'até às',
+        programPick: 'Escolher da programação',
+        programPickHelp:
+            'Mostra os programas das playlists de hoje e dos próximos dias. Escolher um com horário vale só naquele dia; em "Qualquer dia" vale sempre que o programa começar. Você também pode digitar o nome abaixo.',
+        programPickPlaceholder: 'Escolha um programa…',
+        programAnyDay: 'Qualquer dia (sempre que começar)',
+        today: 'Hoje',
+        tomorrow: 'Amanhã',
         programName: 'Nome do programa contém',
         programHelp: 'Deixe vazio para valer para qualquer programa. Comerciais não contam.',
         offset: 'Aparece depois de (segundos)',
