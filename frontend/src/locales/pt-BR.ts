@@ -1,6 +1,7 @@
 import cg from './cg/pt-BR.ts'
 import commercial from './commercial/pt-BR.ts'
 import telegram from './telegram/pt-BR.ts'
+import youtube from './youtube/pt-BR.ts'
 import ux from './ux/pt-BR.ts'
 import settings2 from './ux/settings.pt-BR.ts'
 import screens from './ux/screens.pt-BR.ts'
@@ -17,6 +18,7 @@ export default {
     cg,
     commercial,
     telegram,
+    youtube,
     ...ux,
     settings2,
     ...screens,

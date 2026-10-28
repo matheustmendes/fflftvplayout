@@ -58,6 +58,12 @@ const router = createRouter({
             meta: { showHeader: true },
         },
         {
+            path: '/youtube',
+            name: 'youtube',
+            component: () => import('@/views/YoutubeView.vue'),
+            meta: { showHeader: true },
+        },
+        {
             path: '/logging',
             name: 'logging',
             component: () => import('@/views/LoggingView.vue'),

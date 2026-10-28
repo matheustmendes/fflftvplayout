@@ -18,6 +18,7 @@ export default {
         onair: 'No ar',
         commercial: 'Publicidade',
         more: 'Mais',
+        youtube: 'YouTube',
         files: 'Arquivos',
         cg: 'Gráficos (CG)',
         message: 'Texto na tela',

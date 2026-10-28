@@ -50,6 +50,13 @@ const items = computed<NavItem[]>(() => {
         { key: 'commercial', label: t('nav.commercial'), icon: 'bi-megaphone', path: '/commercial', main: true },
         { key: 'files', label: t('nav.files'), icon: 'bi-folder2-open', path: '/media', main: true },
         { key: 'cg', label: t('nav.cg'), icon: 'bi-layers', path: '/cg' },
+        {
+            key: 'youtube',
+            label: t('nav.youtube'),
+            icon: 'bi-youtube',
+            path: '/youtube',
+            roles: ['global_admin', 'channel_admin'],
+        },
         { key: 'message', label: t('nav.message'), icon: 'bi-chat-square-text', path: '/message' },
         { key: 'history', label: t('nav.history'), icon: 'bi-clock-history', path: '/logging' },
         {
@@ -146,11 +153,13 @@ onMounted(() => {
                 <li v-for="item in items" :key="item.key">
                     <RouterLink
                         :to="channelLink(item.path)"
-                        class="flex items-center gap-2 rounded-lg px-3 py-2 font-medium transition-colors hover:bg-base-200"
+                        :title="item.label"
+                        class="flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 font-medium transition-colors hover:bg-base-200"
                         :class="isActive(item) ? 'bg-primary/15 text-primary font-semibold' : ''"
                     >
                         <i class="bi" :class="item.icon" />
-                        {{ item.label }}
+                        <!-- Entre 768 e 1280 px só a tela atual mostra o nome: o resto cabe como ícone. -->
+                        <span :class="isActive(item) ? '' : 'hidden xl:inline'">{{ item.label }}</span>
                     </RouterLink>
                 </li>
             </ul>

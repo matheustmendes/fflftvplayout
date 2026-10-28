@@ -18,6 +18,7 @@ export default {
         onair: 'On air',
         commercial: 'Advertising',
         more: 'More',
+        youtube: 'YouTube',
         files: 'Files',
         cg: 'Graphics (CG)',
         message: 'On-screen text',
