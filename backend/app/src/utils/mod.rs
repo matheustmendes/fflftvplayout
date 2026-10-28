@@ -39,6 +39,7 @@ pub mod task_runner;
 pub mod telegram;
 pub mod text;
 pub mod time_machine;
+pub mod youtube;
 
 use crate::{
     ARGS,

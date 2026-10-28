@@ -2044,3 +2044,13 @@ mod commercial_tests {
         assert!(item.validate().is_err());
     }
 }
+
+/// A YouTube channel a playout channel may import videos from.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow, PartialEq, Eq)]
+pub struct YoutubeSource {
+    pub id: i32,
+    pub channel_id: i32,
+    /// The id YouTube gives the channel (`UC...`).
+    pub youtube_channel_id: String,
+    pub name: String,
+}

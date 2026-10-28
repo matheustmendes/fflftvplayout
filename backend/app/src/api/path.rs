@@ -40,6 +40,16 @@ pub fn routes() -> Router<AppState> {
                 .route("/telegram/{id}", get(get_telegram).put(update_telegram))
                 .route("/telegram/{id}/token", put(update_telegram_token))
                 .route("/telegram/{id}/test", post(test_telegram))
+                .route("/youtube/{id}", get(get_youtube))
+                .route("/youtube/{id}/jobs", get(get_youtube_jobs))
+                .route("/youtube/{id}/sources", post(add_youtube_source))
+                .route(
+                    "/youtube/{id}/sources/{source}",
+                    delete(remove_youtube_source),
+                )
+                .route("/youtube/{id}/preview", post(preview_youtube))
+                .route("/youtube/{id}/imports", post(start_youtube_import))
+                .route("/youtube/{id}/imports/{job}", delete(cancel_youtube_import))
                 .route("/cg/{id}", get(get_cgs).post(add_cg))
                 .route("/cg/{id}/{cg}", put(edit_cg).delete(remove_cg))
                 .route("/cg/{id}/{cg}/show", post(show_cg).delete(hide_cg))

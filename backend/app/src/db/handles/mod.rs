@@ -16,6 +16,7 @@ pub mod source;
 pub mod telegram;
 pub mod user;
 pub mod week_template;
+pub mod youtube;
 
 pub use airlog::*;
 pub use auto_plan::*;
@@ -35,3 +36,4 @@ pub use source::*;
 pub use telegram::*;
 pub use user::*;
 pub use week_template::*;
+pub use youtube::*;

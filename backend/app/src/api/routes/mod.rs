@@ -42,6 +42,7 @@ mod setup;
 mod system;
 mod telegram;
 mod user;
+mod youtube;
 
 pub use cg::*;
 pub use channel::*;
@@ -60,6 +61,7 @@ pub use setup::*;
 pub use system::*;
 pub use telegram::*;
 pub use user::*;
+pub use youtube::*;
 
 use crate::{
     db::models::Role,

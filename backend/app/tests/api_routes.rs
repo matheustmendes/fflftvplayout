@@ -30,6 +30,8 @@ mod health;
 mod telegram;
 #[path = "api/users.rs"]
 mod users;
+#[path = "api/youtube.rs"]
+mod youtube;
 
 use ffplayout::{
     api::{
